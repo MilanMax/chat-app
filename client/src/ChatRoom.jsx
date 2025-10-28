@@ -7,6 +7,7 @@ import UsernameBanner from "./UsernameBanner.jsx";
 export default function ChatRoom() {
   const { chatId } = useParams();
   const navigate = useNavigate();
+
   const myNickname = localStorage.getItem(`nickname_${chatId}`) || "Guest";
 
   const [messages, setMessages] = useState([]);
@@ -23,32 +24,35 @@ export default function ChatRoom() {
 
   const bottomRef = useRef(null);
 
-  // load local state
+  // 🧩 Load saved state per chat room
   useEffect(() => {
-    const saved = localStorage.getItem("chat_state");
+    const saved = localStorage.getItem(`chat_state_${chatId}`);
     if (saved) {
       try {
         const data = JSON.parse(saved);
         if (Array.isArray(data.subChats)) setSubChats(data.subChats);
         if (data.activeSubChat) setActiveSubChat(data.activeSubChat);
         if (data.pendingText) setPendingText(data.pendingText);
-      } catch {}
+      } catch {
+        console.warn("⚠️ Failed to parse local chat state for", chatId);
+      }
     }
-  }, []);
+  }, [chatId]);
 
-  // save local state
+  // 🧩 Save state per chat room
   useEffect(() => {
     localStorage.setItem(
-      "chat_state",
+      `chat_state_${chatId}`,
       JSON.stringify({ subChats, activeSubChat, pendingText })
     );
-  }, [subChats, activeSubChat, pendingText]);
+  }, [subChats, activeSubChat, pendingText, chatId]);
 
+  // Auto scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // SOCKET
+  // SOCKET SETUP
   useEffect(() => {
     if (!chatId) {
       const id = Math.random().toString(36).substring(2, 8);
@@ -72,7 +76,6 @@ export default function ChatRoom() {
       setSubChats(prev => (prev.includes(name) ? prev : [...prev, name]));
     });
 
-    // 💬 new message
     socket.on("message", msg => {
       if (msg.subRoom !== activeSubChat) {
         // increment unread count
@@ -88,7 +91,6 @@ export default function ChatRoom() {
       });
     });
 
-    // ⏰ scheduled confirmation
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
       const mins = Math.round(delayMs / 60000);
@@ -166,19 +168,27 @@ export default function ChatRoom() {
   return (
     <div className="flex flex-col h-full bg-bg text-white">
       {/* HEADER */}
-      <div className="px-4 pt-4 pb-2 border-b border-slate-800 bg-bg">
-        <div className="text-center font-semibold text-gray-100 text-sm">
-          Private Chat Room
+      <div className="px-4 pt-4 pb-2 border-b border-slate-800 bg-bg flex justify-between items-center">
+        <div>
+          <div className="text-center font-semibold text-gray-100 text-sm">
+            Private Chat Room
+          </div>
+          <div className="text-center text-[0.7rem] text-slate-500">
+            Share this link:
+          </div>
+          <div className="text-center text-xs text-indigo-400 mt-1 break-all">
+            {window.location.href}
+          </div>
         </div>
-        <div className="text-center text-[0.7rem] text-slate-500">
-          Share this link with your partner:
-        </div>
-        <div className="text-center text-xs text-indigo-400 mt-1 break-all">
-          {window.location.href}
-        </div>
-        <div className="text-center text-[0.7rem] text-slate-400 mt-1">
-          You are <span className="text-indigo-400">{myNickname}</span>
-        </div>
+        <button
+          onClick={() => {
+            const id = Math.random().toString(36).substring(2, 8);
+            navigate(`/chat/${id}`);
+          }}
+          className="text-xs bg-indigo-600 px-2 py-1 rounded-md border border-indigo-400 hover:bg-indigo-500 transition"
+        >
+          + New Chat
+        </button>
       </div>
 
       <UsernameBanner username={myNickname} />
