@@ -4,9 +4,8 @@ import Login from "./Login.jsx";
 
 function ChatWrapper() {
   const { chatId } = useParams();
-  const nickname = localStorage.getItem("nickname");
+  const nickname = localStorage.getItem(`nickname_${chatId}`);
 
-  // ako nema nickname → mora prvo na login
   if (!nickname) {
     return <Navigate to={`/login/${chatId}`} replace />;
   }

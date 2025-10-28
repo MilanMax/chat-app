@@ -11,14 +11,14 @@ export default function Login() {
     const cleanName = name.trim();
     if (!cleanName) return;
 
-    localStorage.setItem("nickname", cleanName);
-
-    // ako je neko pozvan linkom
+    // Ako je konkretan chat (sa ID-jem)
     if (chatId) {
+      localStorage.setItem(`nickname_${chatId}`, cleanName);
       navigate(`/chat/${chatId}`);
     } else {
-      // ako ulazi sam, kreiraj novi room
+      // Ako nije — kreiraj novu sobu i ime čuvaj pod novim ID-jem
       const newRoom = Math.random().toString(36).slice(2, 8);
+      localStorage.setItem(`nickname_${newRoom}`, cleanName);
       navigate(`/chat/${newRoom}`);
     }
   }
@@ -30,7 +30,7 @@ export default function Login() {
         className="bg-slate-800 p-6 rounded-2xl shadow-lg flex flex-col gap-3 w-80 border border-slate-700"
       >
         <h2 className="text-lg font-semibold text-center text-indigo-300">
-          Welcome to Chat MVP
+          {chatId ? "Join Chat Room" : "Create Chat Room"}
         </h2>
 
         <input
@@ -50,7 +50,8 @@ export default function Login() {
 
         {chatId && (
           <p className="text-xs text-slate-400 text-center mt-2">
-            You are joining existing room: <span className="text-indigo-300">{chatId}</span>
+            You are joining existing room:{" "}
+            <span className="text-indigo-300">{chatId}</span>
           </p>
         )}
       </form>

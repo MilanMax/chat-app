@@ -7,7 +7,7 @@ import UsernameBanner from "./UsernameBanner.jsx";
 export default function ChatRoom() {
   const { chatId } = useParams();
   const navigate = useNavigate();
-  const myNickname = localStorage.getItem("nickname") || "Guest";
+  const myNickname = localStorage.getItem(`nickname_${chatId}`) || "Guest";
 
   const [messages, setMessages] = useState([]);
   const [pendingText, setPendingText] = useState("");
