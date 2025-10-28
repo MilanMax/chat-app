@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
     "dev": "vite --strictPort --port 5173",
     "build": "vite build",
     "preview": "vite preview"
