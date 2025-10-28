@@ -4,9 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-  "build": "node build.js",
-  "start": "node server.js"
-}
+    "build": "node build.js",
+    "start": "node server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -14,7 +13,7 @@
     "socket.io": "^4.7.5"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^5.1.0",
-    "vite": "^7.1.12"
+    "vite": "^5.3.4",
+    "@vitejs/plugin-react": "^4.3.1"
   }
 }
