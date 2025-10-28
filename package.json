@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "cd client && npm install && npx vite build",
-    "start": "node server.js"
+  "build": "node build.js",
+  "start": "node server.js"
+}
   },
   "dependencies": {
     "cors": "^2.8.5",
