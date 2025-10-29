@@ -2,6 +2,11 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 app.use(cors());
@@ -15,9 +20,10 @@ const io = new Server(server, {
   }
 });
 
-const roomSubchats = {};      // { roomId: ["default","food",...]}
-const messageHistory = {};    // { roomId: [ {msg}, {msg} ] }
+const roomSubchats = {};
+const messageHistory = {};
 
+// 🧩 SOCKET IO LOGIKA
 io.on("connection", socket => {
   console.log("✅ Connected:", socket.id);
 
@@ -30,7 +36,6 @@ io.on("connection", socket => {
 
     socket.emit("chat_history", messageHistory[roomId]);
     socket.emit("subchat_list", roomSubchats[roomId]);
-    console.log(`${nickname} joined room ${roomId}`);
   });
 
   socket.on("create_subchat", ({ roomId, subRoom }) => {
@@ -38,7 +43,6 @@ io.on("connection", socket => {
     if (!roomSubchats[roomId].includes(subRoom)) {
       roomSubchats[roomId].push(subRoom);
       io.to(roomId).emit("subchat_created", subRoom);
-      console.log(`🆕 Subchat "${subRoom}" created in room ${roomId}`);
     }
   });
 
@@ -53,10 +57,8 @@ io.on("connection", socket => {
     if (!messageHistory[data.roomId]) messageHistory[data.roomId] = [];
     messageHistory[data.roomId].push(msg);
     io.to(data.roomId).emit("message", msg);
-    console.log(`💬 Message ${data.text} in ${data.roomId}/${data.subRoom}`);
   });
 
-  // ⏰ SCHEDULED MESSAGE
   socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
     const scheduleId = Date.now();
     const msg = {
@@ -69,10 +71,8 @@ io.on("connection", socket => {
       deliverAt: Date.now() + delayMs
     };
 
-    // pošiljaocu odmah pošaljemo potvrdu
     socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
 
-    // i posle delay-a pošaljemo svima pravu poruku
     setTimeout(() => {
       const deliverMsg = {
         ...msg,
@@ -83,13 +83,20 @@ io.on("connection", socket => {
       if (!messageHistory[roomId]) messageHistory[roomId] = [];
       messageHistory[roomId].push(deliverMsg);
       io.to(roomId).emit("message", deliverMsg);
-      console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
     }, delayMs);
   });
 
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
 
-app.get("/", (req, res) => res.send("Chat server is running ✅"));
+// 🧩 SERVE FRONTEND BUILD
+const clientPath = path.join(__dirname, "../client/dist");
+app.use(express.static(clientPath));
+
+// fallback za React Router (sve nepoznate rute vraćaju index.html)
+app.get("*", (req, res) => {
+  res.sendFile(path.join(clientPath, "index.html"));
+});
+
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server on port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Server + Frontend running on ${PORT}`));
