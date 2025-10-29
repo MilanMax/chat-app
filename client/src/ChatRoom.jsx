@@ -7,7 +7,6 @@ import UsernameBanner from "./UsernameBanner.jsx";
 export default function ChatRoom() {
   const { chatId } = useParams();
   const navigate = useNavigate();
-
   const myNickname = localStorage.getItem(`nickname_${chatId}`) || "Guest";
 
   const [messages, setMessages] = useState([]);
@@ -15,7 +14,6 @@ export default function ChatRoom() {
   const [subChats, setSubChats] = useState(["default"]);
   const [activeSubChat, setActiveSubChat] = useState("default");
   const [unreadCounts, setUnreadCounts] = useState({});
-
   const [showSchedule, setShowSchedule] = useState(false);
   const [selectedDelay, setSelectedDelay] = useState(60000);
   const [notification, setNotification] = useState(null);
@@ -24,7 +22,7 @@ export default function ChatRoom() {
 
   const bottomRef = useRef(null);
 
-  // LOAD + SAVE localStorage PER CHAT ROOM
+  // Load saved state
   useEffect(() => {
     const saved = localStorage.getItem(`chat_state_${chatId}`);
     if (saved) {
@@ -46,8 +44,9 @@ export default function ChatRoom() {
     );
   }, [subChats, activeSubChat, pendingText, chatId]);
 
-  // AUTOSCROLL
-  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [messages]);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   // SOCKET EVENTS
   useEffect(() => {
@@ -73,6 +72,7 @@ export default function ChatRoom() {
       setSubChats(prev => (prev.includes(name) ? prev : [...prev, name]));
     });
 
+    // ✅ FIX: replace scheduled message with real one
     socket.on("message", msg => {
       if (msg.subRoom !== activeSubChat) {
         setUnreadCounts(prev => ({
@@ -81,15 +81,31 @@ export default function ChatRoom() {
         }));
         return;
       }
-      setMessages(prev => [...prev, msg]);
+
+      setMessages(prev => {
+        const index = prev.findIndex(
+          m =>
+            m.isScheduled &&
+            m.username === msg.username &&
+            m.text === msg.text &&
+            Math.abs((m.deliverAt || 0) - new Date(msg.ts).getTime()) <
+              10 * 60 * 1000 // do 10 min razlike
+        );
+
+        if (index !== -1) {
+          const updated = [...prev];
+          updated[index] = { ...msg, isScheduled: false };
+          return updated;
+        }
+
+        return [...prev, msg];
+      });
     });
 
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
-      setMessages(prev => [...prev, msg]); // odmah prikaži sa satom
-      setNotification(
-        `Scheduled for ${Math.round(delayMs / 60000)} min`
-      );
+      setMessages(prev => [...prev, msg]); // prikaži odmah
+      setNotification(`Scheduled for ${Math.round(delayMs / 60000)} min`);
       setTimeout(() => setNotification(null), 4000);
     });
 
