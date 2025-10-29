@@ -6,52 +6,35 @@ export default function MessageBubble({
   isScheduled,
   deliverAt
 }) {
-  const time = new Date(ts).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+  const bubbleClass = mine
+    ? "bg-indigo-600 text-white self-end"
+    : "bg-slate-700 text-gray-100 self-start";
 
-  const timeLeft = isScheduled
-    ? Math.max(0, Math.round((deliverAt - Date.now()) / 60000))
-    : null;
+  const time = ts
+    ? new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : "";
 
   return (
-    <div className={`flex mb-2 ${mine ? "justify-end" : "justify-start"}`}>
+    <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+      {!mine && (
+        <span className="text-[0.7rem] text-slate-400 mb-1">{username}</span>
+      )}
       <div
-        className={`max-w-[80%] rounded-2xl px-3 py-2 text-sm leading-relaxed shadow ${
-          mine ? "bg-bubbleSelf text-white" : "bg-bubbleOther text-gray-100"
-        } ${isScheduled ? "opacity-70" : ""} animate-fade-in`}
+        className={`px-3 py-2 rounded-2xl text-sm max-w-[80%] border border-slate-800 ${bubbleClass}`}
       >
-        {!mine && (
-          <div className="text-[0.7rem] font-semibold text-indigo-300 mb-1">
-            {username}
-          </div>
+        <span>{text}</span>
+        {isScheduled && (
+          <span
+            className="ml-1 text-[0.8rem] opacity-80"
+            title={`Scheduled for ${new Date(
+              deliverAt || Date.now()
+            ).toLocaleTimeString()}`}
+          >
+            ⏰
+          </span>
         )}
-
-        <div className="whitespace-pre-wrap break-words flex items-center gap-1">
-          {text}
-          {isScheduled && (
-            <span
-              className="ml-1 text-[0.7rem]"
-              title="Scheduled message"
-              role="img"
-              aria-label="clock"
-            >
-              ⏰
-            </span>
-          )}
-        </div>
-
-        <div
-          className={`text-[0.6rem] mt-1 text-right ${
-            mine ? "text-indigo-200" : "text-gray-400"
-          }`}
-        >
-          {isScheduled
-            ? `Scheduled${timeLeft > 0 ? ` • in ${timeLeft}m` : ""}`
-            : time}
-        </div>
       </div>
+      <span className="text-[0.65rem] text-slate-500 mt-1">{time}</span>
     </div>
   );
 }

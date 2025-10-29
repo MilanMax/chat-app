@@ -24,7 +24,7 @@ export default function ChatRoom() {
 
   const bottomRef = useRef(null);
 
-  // 🧩 Load saved state per chat room
+  // LOAD + SAVE localStorage PER CHAT ROOM
   useEffect(() => {
     const saved = localStorage.getItem(`chat_state_${chatId}`);
     if (saved) {
@@ -39,7 +39,6 @@ export default function ChatRoom() {
     }
   }, [chatId]);
 
-  // 🧩 Save state per chat room
   useEffect(() => {
     localStorage.setItem(
       `chat_state_${chatId}`,
@@ -47,12 +46,10 @@ export default function ChatRoom() {
     );
   }, [subChats, activeSubChat, pendingText, chatId]);
 
-  // Auto scroll
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  // AUTOSCROLL
+  useEffect(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), [messages]);
 
-  // SOCKET SETUP
+  // SOCKET EVENTS
   useEffect(() => {
     if (!chatId) {
       const id = Math.random().toString(36).substring(2, 8);
@@ -78,32 +75,21 @@ export default function ChatRoom() {
 
     socket.on("message", msg => {
       if (msg.subRoom !== activeSubChat) {
-        // increment unread count
         setUnreadCounts(prev => ({
           ...prev,
           [msg.subRoom]: (prev[msg.subRoom] || 0) + 1
         }));
         return;
       }
-      setMessages(prev => {
-        const filtered = prev.filter(m => !(m.tempId && m.tempId === msg.id));
-        return [...filtered, msg];
-      });
+      setMessages(prev => [...prev, msg]);
     });
 
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
-      const mins = Math.round(delayMs / 60000);
-      const localPlaceholder = {
-        ...msg,
-        mine: true,
-        tempId: msg.id,
-        isScheduled: true,
-        scheduledAt: Date.now(),
-        deliverAt: Date.now() + delayMs
-      };
-      setMessages(prev => [...prev, localPlaceholder]);
-      setNotification(`Scheduled for ${mins} minute${mins !== 1 ? "s" : ""}`);
+      setMessages(prev => [...prev, msg]); // odmah prikaži sa satom
+      setNotification(
+        `Scheduled for ${Math.round(delayMs / 60000)} min`
+      );
       setTimeout(() => setNotification(null), 4000);
     });
 
@@ -115,12 +101,6 @@ export default function ChatRoom() {
       socket.off("scheduled_confirmed");
     };
   }, [chatId, activeSubChat, myNickname, navigate]);
-
-  // reset unread count when switching tab
-  function switchSubChat(sub) {
-    setActiveSubChat(sub);
-    setUnreadCounts(prev => ({ ...prev, [sub]: 0 }));
-  }
 
   function sendMessage() {
     const txt = pendingText.trim();
@@ -200,7 +180,10 @@ export default function ChatRoom() {
           return (
             <button
               key={sub}
-              onClick={() => switchSubChat(sub)}
+              onClick={() => {
+                setActiveSubChat(sub);
+                setUnreadCounts(prev => ({ ...prev, [sub]: 0 }));
+              }}
               className={`px-3 py-1 text-xs rounded-full border relative ${
                 sub === activeSubChat
                   ? "bg-indigo-600 border-indigo-400 text-white"
@@ -243,17 +226,19 @@ export default function ChatRoom() {
 
       {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
-        {messages.map(m => (
-          <MessageBubble
-            key={m.id || m.tempId}
-            mine={m.username === myNickname || m.mine}
-            username={m.username}
-            text={m.text}
-            ts={m.ts || m.deliverAt}
-            isScheduled={m.isScheduled}
-            deliverAt={m.deliverAt}
-          />
-        ))}
+        {messages
+          .filter(m => m.subRoom === activeSubChat)
+          .map(m => (
+            <MessageBubble
+              key={m.id}
+              mine={m.username === myNickname}
+              username={m.username}
+              text={m.text}
+              ts={m.ts}
+              isScheduled={m.isScheduled}
+              deliverAt={m.deliverAt}
+            />
+          ))}
         <div ref={bottomRef} />
       </div>
 
