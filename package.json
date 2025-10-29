@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.js",
-    "start": "node server.js"
+    "build": "cd client && npm install && npm run build && cp -r dist ../client-dist",
+    "start": "node server/index.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
