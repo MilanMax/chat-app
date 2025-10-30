@@ -81,7 +81,6 @@ export default function ChatRoom() {
   const navigate = useNavigate();
   const myNickname = localStorage.getItem(`nickname_${chatId}`) || "Guest";
 
-  // poruke po ID-u — pending i delivered dele isti ključ
   const [messagesById, setMessagesById] = useState({});
   const [pendingText, setPendingText] = useState("");
   const [subChats, setSubChats] = useState(["default"]);
@@ -102,7 +101,6 @@ export default function ChatRoom() {
         new Date(a.deliveredAt || a.ts) - new Date(b.deliveredAt || b.ts)
     );
 
-  // socket events
   useEffect(() => {
     if (!chatId) {
       const id = Math.random().toString(36).substring(2, 8);
@@ -150,9 +148,8 @@ export default function ChatRoom() {
       setSubChats(prev => (prev.includes(name) ? prev : [...prev, name]));
     });
 
-    // 💬 normalne poruke od drugih (ignoriši moje)
     socket.on("message", msg => {
-      if (msg.senderId === socket.id) return; // ✅ IGNORIŠI SVOJE
+      if (msg.senderId === socket.id) return;
 
       if (msg.subRoom !== activeSubChat) {
         setUnreadCounts(prev => ({
@@ -164,7 +161,6 @@ export default function ChatRoom() {
       upsertMessage(msg);
     });
 
-    // 🕐 pending
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
       upsertMessage({ ...msg, scheduledDelivered: false, isScheduled: true });
@@ -203,7 +199,76 @@ export default function ChatRoom() {
       delayMs: selectedDelay,
       nickname: myNickname
     });
- export default function ChatRoom() {
+    setPendingText("");
+    setShowSchedule(false);
+  }
+
+  function createSubChat() {
+    const name = newChatName.trim();
+    if (!name) return;
+    socket.emit("create_subchat", { roomId: chatId, subChatName: name });
+    setNewChatName("");
+    setShowAddChat(false);
+  }
+
+  function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [sortedMessages]);
+
+  return (
+    <div className="flex flex-col h-screen bg-bg text-white">
+      <UsernameBanner chatId={chatId} nickname={myNickname} />
+
+      {notification && (
+        <div className="bg-indigo-600 text-white text-center py-2 text-sm">
+          {notification}
+        </div>
+      )}
+
+      {showAddChat && (
+        <div className="bg-slate-800 border-b border-slate-700 px-3 py-2 flex gap-2">
+          <input
+            type="text"
+            placeholder="New chat name..."
+            value={newChatName}
+            onChange={e => setNewChatName(e.target.value)}
+            className="flex-1 bg-slate-700 text-white px-3 py-1 rounded-lg text-sm outline-none border border-slate-600"
+            onKeyDown={e => e.key === "Enter" && createSubChat()}
+          />
+          <button
+            onClick={createSubChat}
+            className="bg-indigo-600 text-white px-3 py-1 rounded-lg text-sm"
+          >
+            Create
+          </button>
+          <button
+            onClick={() => setShowAddChat(false)}
+            className="bg-slate-700 text-gray-300 px-3 py-1 rounded-lg text-sm"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      <div className="flex gap-2 px-3 py-2 border-b border-slate-800 overflow-x-auto">
+        {subChats.map(sub => {
+          const unread = sub !== activeSubChat ? unreadCounts[sub] || 0 : 0;
+          return (
+            <button
+              key={sub}
+              onClick={() => {
+                setActiveSubChat(sub);
+                setUnreadCounts(prev => ({ ...prev, [sub]: 0 }));
+              }}
+              className={`px-3 py-1 text-xs rounded-full border whitespace-nowrap ${
+                sub === activeSubChat
                   ? "bg-indigo-600 border-indigo-400 text-white"
                   : "bg-slate-800 border-slate-700 text-gray-300"
               }`}
@@ -225,7 +290,6 @@ export default function ChatRoom() {
         </button>
       </div>
 
-      {/* messages */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
         {sortedMessages.map(m => (
           <MessageBubble
@@ -242,7 +306,6 @@ export default function ChatRoom() {
         <div ref={bottomRef} />
       </div>
 
-      {/* input */}
       <div className="safe-area border-t border-slate-800 bg-bg px-3 py-3">
         <div className="flex items-end gap-2 flex-wrap">
           <textarea
@@ -262,3 +325,39 @@ export default function ChatRoom() {
             </button>
             <button
               className="bg-slate-700 text-gray-200 text-xs rounded-xl px-3 py-1 border border-slate-600 active:scale-95"
+              onClick={() => setShowSchedule(!showSchedule)}
+            >
+              ⏰ Schedule
+            </button>
+          </div>
+        </div>
+
+        {showSchedule && (
+          <div className="mt-2 bg-slate-800 rounded-lg p-3 border border-slate-700">
+            <div className="flex gap-2 mb-2">
+              {[60000, 300000, 600000].map(ms => (
+                <button
+                  key={ms}
+                  onClick={() => setSelectedDelay(ms)}
+                  className={`px-3 py-1 text-xs rounded ${
+                    selectedDelay === ms
+                      ? "bg-indigo-600 text-white"
+                      : "bg-slate-700 text-gray-300"
+                  }`}
+                >
+                  {ms / 60000} min
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={scheduleMessage}
+              className="w-full bg-indigo-600 text-white py-2 rounded-lg text-sm font-semibold"
+            >
+              Schedule Message
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
