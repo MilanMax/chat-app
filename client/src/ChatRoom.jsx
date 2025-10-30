@@ -90,21 +90,16 @@ export default function ChatRoom() {
 
     // 💌 kad server pošalje potvrdu da je scheduled poruka isporučena
     socket.on("message_delivered", msg => {
-      setMessages(prev => {
-        const index = prev.findIndex(
-          m =>
-            m.isScheduled &&
-            m.username === msg.username &&
-            m.text === msg.text
-        );
-        if (index !== -1) {
-          const updated = [...prev];
-          updated[index] = { ...msg, isScheduled: false };
-          return updated;
-        }
-        return [...prev, msg];
-      });
-    });
+  setMessages(prev => {
+    const index = prev.findIndex(m => m.id === msg.id);
+    if (index !== -1) {
+      const updated = [...prev];
+      updated[index] = { ...msg, isScheduled: false };
+      return updated;
+    }
+    return [...prev, msg];
+  });
+});
 
     // 🕐 prikaz odmah kod sendera (pending)
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {

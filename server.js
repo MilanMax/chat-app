@@ -76,24 +76,20 @@ io.on("connection", socket => {
     socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
 
     // ⏱ Kad istekne vreme, pošalji svima osim senderu
-    setTimeout(() => {
-      const deliverMsg = {
-        ...msg,
-        isScheduled: false,
-        id: Date.now(),
-        ts: new Date().toISOString()
-      };
+   setTimeout(() => {
+  const deliverMsg = {
+    ...msg,
+    isScheduled: false,
+    // ⚠️ NE menja se ID — koristi isti scheduleId
+    ts: new Date().toISOString()
+  };
 
-      if (!messageHistory[roomId]) messageHistory[roomId] = [];
-      messageHistory[roomId].push(deliverMsg);
+  if (!messageHistory[roomId]) messageHistory[roomId] = [];
+  messageHistory[roomId].push(deliverMsg);
 
-      // ✅ Pošalji svima osim senderu
-      socket.to(roomId).emit("message", deliverMsg);
-
-      // ✅ Senderu pošalji “message_delivered” da zameni local 🕐 poruku
-      socket.emit("message_delivered", deliverMsg);
-    }, delayMs);
-  });
+  socket.to(roomId).emit("message", deliverMsg);
+  socket.emit("message_delivered", deliverMsg);
+}, delayMs);
 
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
