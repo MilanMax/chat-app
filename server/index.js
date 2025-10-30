@@ -1,3 +1,13 @@
+import dotenv from "dotenv";
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import mongoose from "mongoose";
+import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
+import fs from "fs";
+
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -49,7 +59,7 @@ io.on("connection", socket => {
     // učitaj istoriju i subchats
     const history = await Message.find({ roomId }).sort({ ts: 1 }).lean();
     const subchats = await Subchat.find({ roomId }).lean();
-@@ -61,77 +62,84 @@ io.on("connection", socket => {
+    
     socket.emit("chat_history", history);
     socket.emit(
       "subchat_list",
@@ -119,7 +129,6 @@ io.on("connection", socket => {
 });
 
 // ✅ Serviraj React build
-import fs from "fs";
 const clientPath = path.join(__dirname, "../client-dist");
 if (fs.existsSync(clientPath)) {
   app.use(express.static(clientPath));
@@ -133,4 +142,4 @@ if (fs.existsSync(clientPath)) {
 }
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server + Mongo running on ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Server + Mongo running on ${PORT}`))
