@@ -4,6 +4,10 @@ import { Server } from "socket.io";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import mongoose from "mongoose";
+import dotenv from "dotenv";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,79 +16,110 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ✅ MongoDB konekcija
+const mongoUri = process.env.MONGO_URI;
+mongoose
+  .connect(mongoUri, { dbName: "chatapp" })
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => console.error("❌ MongoDB connection error:", err));
+
+// ✅ Definicije modela
+const MessageSchema = new mongoose.Schema({
+  roomId: String,
+  subRoom: { type: String, default: "default" },
+  username: String,
+  text: String,
+  ts: { type: Date, default: Date.now },
+  isScheduled: Boolean,
+  deliverAt: Date
+});
+const Message = mongoose.model("Message", MessageSchema);
+
+const SubchatSchema = new mongoose.Schema({
+  roomId: String,
+  name: String
+});
+const Subchat = mongoose.model("Subchat", SubchatSchema);
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: "*", methods: ["GET", "POST"] }
 });
 
-const roomSubchats = {};
-const messageHistory = {};
-
-// 🧩 SOCKET IO
+// ✅ SOCKET.IO
 io.on("connection", socket => {
   console.log("✅ Connected:", socket.id);
 
-  socket.on("join_room", ({ roomId, subRoom, nickname }) => {
+  socket.on("join_room", async ({ roomId, subRoom, nickname }) => {
     socket.join(roomId);
     socket.data = { roomId, nickname };
 
-    if (!roomSubchats[roomId]) roomSubchats[roomId] = ["default"];
-    if (!messageHistory[roomId]) messageHistory[roomId] = [];
+    // učitaj istoriju i subchats
+    const history = await Message.find({ roomId }).sort({ ts: 1 }).lean();
+    const subchats = await Subchat.find({ roomId }).lean();
 
-    socket.emit("chat_history", messageHistory[roomId]);
-    socket.emit("subchat_list", roomSubchats[roomId]);
+    socket.emit("chat_history", history);
+    socket.emit(
+      "subchat_list",
+      subchats.length ? subchats.map(s => s.name) : ["default"]
+    );
   });
 
-  socket.on("create_subchat", ({ roomId, subRoom }) => {
-    if (!roomSubchats[roomId]) roomSubchats[roomId] = ["default"];
-    if (!roomSubchats[roomId].includes(subRoom)) {
-      roomSubchats[roomId].push(subRoom);
+  socket.on("create_subchat", async ({ roomId, subRoom }) => {
+    const exists = await Subchat.findOne({ roomId, name: subRoom });
+    if (!exists) {
+      await Subchat.create({ roomId, name: subRoom });
       io.to(roomId).emit("subchat_created", subRoom);
+      console.log(`🆕 Subchat "${subRoom}" created in room ${roomId}`);
     }
   });
 
-  socket.on("send_message", data => {
+  socket.on("send_message", async data => {
     const msg = {
-      id: Date.now(),
+      roomId: data.roomId,
+      subRoom: data.subRoom || "default",
       username: data.nickname,
       text: data.text,
-      subRoom: data.subRoom || "default",
-      ts: new Date().toISOString()
+      ts: new Date(),
+      isScheduled: false
     };
-    if (!messageHistory[data.roomId]) messageHistory[data.roomId] = [];
-    messageHistory[data.roomId].push(msg);
+    await Message.create(msg);
     io.to(data.roomId).emit("message", msg);
   });
 
-  socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
-    const scheduleId = Date.now();
-    const msg = {
-      id: scheduleId,
-      username: nickname,
-      text,
-      subRoom,
-      ts: new Date().toISOString(),
-      isScheduled: true,
-      deliverAt: Date.now() + delayMs
-    };
-    socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
-    setTimeout(() => {
-      const deliverMsg = {
-        ...msg,
-        isScheduled: false,
-        id: Date.now(),
-        ts: new Date().toISOString()
+  socket.on(
+    "schedule_message",
+    async ({ roomId, subRoom, text, delayMs, nickname }) => {
+      const deliverAt = new Date(Date.now() + delayMs);
+      const msg = {
+        roomId,
+        subRoom,
+        username: nickname,
+        text,
+        ts: new Date(),
+        isScheduled: true,
+        deliverAt
       };
-      if (!messageHistory[roomId]) messageHistory[roomId] = [];
-      messageHistory[roomId].push(deliverMsg);
-      io.to(roomId).emit("message", deliverMsg);
-    }, delayMs);
-  });
+      const saved = await Message.create(msg);
+      socket.emit("scheduled_confirmed", { msg: saved, delayMs, subRoom });
+
+      setTimeout(async () => {
+        const deliverMsg = {
+          ...msg,
+          isScheduled: false,
+          ts: new Date()
+        };
+        await Message.create(deliverMsg);
+        io.to(roomId).emit("message", deliverMsg);
+        console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
+      }, delayMs);
+    }
+  );
 
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
 
-// 🧩 FRONTEND BUILD SERVING
+// ✅ Serviraj React build
 import fs from "fs";
 const clientPath = path.join(__dirname, "../client-dist");
 if (fs.existsSync(clientPath)) {
@@ -99,4 +134,4 @@ if (fs.existsSync(clientPath)) {
 }
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server + Frontend running on ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Server + Mongo running on ${PORT}`));
