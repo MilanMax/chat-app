@@ -4,7 +4,8 @@ export default function MessageBubble({
   text,
   ts,
   isScheduled,
-  deliverAt
+  deliverAt,
+  scheduledDelivered
 }) {
   const bubbleClass = mine
     ? "bg-indigo-600 text-white self-end"
@@ -22,8 +23,8 @@ export default function MessageBubble({
       <div
         className={`px-3 py-2 rounded-2xl text-sm max-w-[80%] border border-slate-800 ${bubbleClass}`}
       >
-        <span>{text}</span>
-        {isScheduled && (
+        <span className={scheduledDelivered ? "italic" : ""}>{text}</span>
+        {isScheduled && !scheduledDelivered && (
           <span
             className="ml-1 text-[0.8rem] opacity-80"
             title={`Scheduled for ${new Date(
@@ -34,7 +35,20 @@ export default function MessageBubble({
           </span>
         )}
       </div>
-      <span className="text-[0.65rem] text-slate-500 mt-1">{time}</span>
+      <div
+        className={`text-[0.65rem] mt-1 ${
+          mine ? "text-right" : "text-left"
+        } text-slate-500 flex flex-wrap gap-1 items-center ${
+          mine ? "justify-end" : ""
+        }`}
+      >
+        <span>{time}</span>
+        {scheduledDelivered && (
+          <span className="text-[0.6rem] italic text-indigo-300">
+            · This message was scheduled and delivered
+          </span>
+        )}
+      </div>
     </div>
   );
 }

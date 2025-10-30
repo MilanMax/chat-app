@@ -4,6 +4,78 @@ import { socket } from "./socket.js";
 import MessageBubble from "./MessageBubble.jsx";
 import UsernameBanner from "./UsernameBanner.jsx";
 
+const deriveKey = msg => {
+  if (!msg) return null;
+  return (
+    msg.scheduledSourceId ||
+    msg._storageKey ||
+    (msg.deliverAt
+      ? `${msg.username || ""}__${msg.subRoom || "default"}__${new Date(
+          msg.deliverAt
+        ).getTime()}__${(msg.text || "").trim()}`
+      : null) ||
+    msg.id ||
+    msg._id ||
+    msg.tempId ||
+    (msg.ts
+      ? `${msg.username || "anon"}__${msg.subRoom || "default"}__${new Date(
+          msg.ts
+        ).getTime()}__${(msg.text || "").slice(0, 16)}`
+      : null)
+  );
+};
+
+const mergeMessage = (collection, incoming) => {
+  const key = deriveKey(incoming);
+  if (!key) return collection;
+
+  const previous = collection[key] || {};
+  const hasScheduledContext = Boolean(
+    incoming.scheduledSourceId ||
+      previous.scheduledSourceId ||
+      incoming.deliverAt ||
+      previous.deliverAt
+  );
+  const isScheduledFlag =
+    Boolean(previous.isScheduled) ||
+    Boolean(incoming.isScheduled) ||
+    hasScheduledContext;
+
+  let scheduledDeliveredFlag =
+    previous.scheduledDelivered ?? incoming.scheduledDelivered ?? false;
+
+  if (!incoming.isScheduled && (incoming.scheduledSourceId || incoming.deliverAt)) {
+    scheduledDeliveredFlag = true;
+  }
+
+  if (
+    !incoming.isScheduled &&
+    (previous.isScheduled || (incoming.scheduledSourceId && isScheduledFlag))
+  ) {
+    scheduledDeliveredFlag = true;
+  }
+
+  const deliverAtValue = incoming.deliverAt || previous.deliverAt;
+  const deliveredAtValue =
+    incoming.deliveredAt ||
+    (!incoming.isScheduled ? incoming.ts : previous.deliveredAt);
+
+  return {
+    ...collection,
+    [key]: {
+      ...previous,
+      ...incoming,
+      scheduledSourceId:
+        incoming.scheduledSourceId || previous.scheduledSourceId || null,
+      isScheduled: isScheduledFlag,
+      deliverAt: deliverAtValue,
+      deliveredAt: deliveredAtValue,
+      scheduledDelivered: scheduledDeliveredFlag,
+      _storageKey: key
+    }
+  };
+};
+
 export default function ChatRoom() {
   const { chatId } = useParams();
   const navigate = useNavigate();
@@ -38,6 +110,19 @@ export default function ChatRoom() {
       return;
     }
 
+    const upsertMessage = incoming => {
+      if (!incoming) return;
+      setMessagesById(prev => {
+        const key = deriveKey(incoming);
+        const fallbackSubRoom = key ? prev[key]?.subRoom : undefined;
+        const enriched = {
+          ...incoming,
+          subRoom: incoming.subRoom || fallbackSubRoom || "default"
+        };
+        return mergeMessage(prev, enriched);
+      });
+    };
+
     socket.emit("join_room", {
       roomId: chatId,
       subRoom: activeSubChat,
@@ -45,8 +130,14 @@ export default function ChatRoom() {
     });
 
     socket.on("chat_history", history => {
-      const map = {};
-      for (const m of history || []) map[m.id] = m;
+      let map = {};
+      for (const entry of history || []) {
+        const enriched = {
+          ...entry,
+          subRoom: entry.subRoom || "default"
+        };
+        map = mergeMessage(map, enriched);
+      }
       setMessagesById(map);
     });
 
@@ -70,26 +161,15 @@ export default function ChatRoom() {
         }));
       }
 
-      setMessagesById(prev => ({
-        ...prev,
-        [msg.id]: { ...(prev[msg.id] || {}), ...msg, isScheduled: false }
-      }));
+      upsertMessage(msg);
     });
 
     // 🕐 pending
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
-      setMessagesById(prev => ({ ...prev, [msg.id]: msg }));
+      upsertMessage({ ...msg, scheduledDelivered: false, isScheduled: true });
       setNotification(`Scheduled for ${Math.round(delayMs / 60000)} min`);
       setTimeout(() => setNotification(null), 3000);
-    });
-
-    // ✅ zamenjuje pending jednom realnom porukom
-    socket.on("message_delivered", msg => {
-      setMessagesById(prev => ({
-        ...prev,
-        [msg.id]: { ...(prev[msg.id] || {}), ...msg, isScheduled: false }
-      }));
     });
 
     return () => {
@@ -98,7 +178,6 @@ export default function ChatRoom() {
       socket.off("subchat_created");
       socket.off("message");
       socket.off("scheduled_confirmed");
-      socket.off("message_delivered");
     };
   }, [chatId, activeSubChat, myNickname, navigate]);
 
@@ -124,71 +203,7 @@ export default function ChatRoom() {
       delayMs: selectedDelay,
       nickname: myNickname
     });
-    setPendingText("");
-    setShowSchedule(false);
-  }
-
-  function handleKey(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  }
-
-  function addNewChat() {
-    const clean = newChatName.trim();
-    if (!clean || subChats.includes(clean)) return;
-    setSubChats(prev => [...prev, clean]);
-    setActiveSubChat(clean);
-    setShowAddChat(false);
-    setNewChatName("");
-    socket.emit("create_subchat", { roomId: chatId, subRoom: clean });
-  }
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [sortedMessages.length]);
-
-  return (
-    <div className="flex flex-col h-full bg-bg text-white">
-      <div className="px-4 pt-4 pb-2 border-b border-slate-800 bg-bg flex justify-between items-center">
-        <div>
-          <div className="text-center font-semibold text-gray-100 text-sm">
-            Private Chat Room
-          </div>
-          <div className="text-center text-[0.7rem] text-slate-500">
-            Share this link:
-          </div>
-          <div className="text-center text-xs text-indigo-400 mt-1 break-all">
-            {window.location.href}
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            const id = Math.random().toString(36).substring(2, 8);
-            navigate(`/chat/${id}`);
-          }}
-          className="text-xs bg-indigo-600 px-2 py-1 rounded-md border border-indigo-400 hover:bg-indigo-500 transition"
-        >
-          + New Chat
-        </button>
-      </div>
-
-      <UsernameBanner username={myNickname} />
-
-      {/* subchats */}
-      <div className="flex gap-2 px-3 py-2 bg-slate-900 border-b border-slate-800 overflow-x-auto">
-        {subChats.map(sub => {
-          const unread = unreadCounts[sub] || 0;
-          return (
-            <button
-              key={sub}
-              onClick={() => {
-                setActiveSubChat(sub);
-                setUnreadCounts(prev => ({ ...prev, [sub]: 0 }));
-              }}
-              className={`px-3 py-1 text-xs rounded-full border ${
-                sub === activeSubChat
+@@ -192,57 +271,58 @@ export default function ChatRoom() {
                   ? "bg-indigo-600 border-indigo-400 text-white"
                   : "bg-slate-800 border-slate-700 text-gray-300"
               }`}
@@ -214,13 +229,14 @@ export default function ChatRoom() {
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
         {sortedMessages.map(m => (
           <MessageBubble
-            key={m.id}
+            key={m._storageKey || deriveKey(m) || m.id || m._id}
             mine={m.username === myNickname}
             username={m.username}
             text={m.text}
             ts={m.deliveredAt || m.ts}
             isScheduled={m.isScheduled}
             deliverAt={m.deliverAt}
+            scheduledDelivered={Boolean(m.scheduledDelivered)}
           />
         ))}
         <div ref={bottomRef} />
@@ -246,50 +262,3 @@ export default function ChatRoom() {
             </button>
             <button
               className="bg-slate-700 text-gray-200 text-xs rounded-xl px-3 py-1 border border-slate-600 active:scale-95"
-              onClick={() => setShowSchedule(!showSchedule)}
-            >
-              Send later
-            </button>
-          </div>
-        </div>
-
-        {showSchedule && (
-          <div className="mt-2 bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-gray-200">
-            <div className="mb-2 font-semibold text-indigo-400">
-              Send after:
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {[1, 2, 5, 10, 30, 60, 180, 360].map(min => (
-                <button
-                  key={min}
-                  className={`px-3 py-1 rounded-lg border ${
-                    selectedDelay === min * 60000
-                      ? "bg-indigo-500 border-indigo-300"
-                      : "bg-slate-700 border-slate-600"
-                  }`}
-                  onClick={() => setSelectedDelay(min * 60000)}
-                >
-                  {min >= 60 ? `${min / 60}h` : `${min}m`}
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 flex justify-end">
-              <button
-                className="bg-indigo-600 px-4 py-1 rounded-lg text-sm font-semibold"
-                onClick={scheduleMessage}
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        )}
-
-        {notification && (
-          <div className="text-center text-xs text-green-400 mt-2">
-            {notification}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}

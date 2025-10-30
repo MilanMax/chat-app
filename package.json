@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "cd client && npm install && npm run build && cp -r dist ../client-dist",
-    "start": "node server/index.js"
+    "start": "node server/index.js",
+    "archive": "node scripts/archive.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -1,12 +1,3 @@
-import express from "express";
-import http from "http";
-import { Server } from "socket.io";
-import cors from "cors";
-import path from "path";
-import { fileURLToPath } from "url";
-import mongoose from "mongoose";
-import dotenv from "dotenv";
-
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
@@ -31,7 +22,8 @@ const MessageSchema = new mongoose.Schema({
   text: String,
   ts: { type: Date, default: Date.now },
   isScheduled: Boolean,
-  deliverAt: Date
+  deliverAt: Date,
+  scheduledSourceId: { type: String, default: null }
 });
 const Message = mongoose.model("Message", MessageSchema);
 
@@ -57,7 +49,7 @@ io.on("connection", socket => {
     // učitaj istoriju i subchats
     const history = await Message.find({ roomId }).sort({ ts: 1 }).lean();
     const subchats = await Subchat.find({ roomId }).lean();
-
+@@ -61,77 +62,84 @@ io.on("connection", socket => {
     socket.emit("chat_history", history);
     socket.emit(
       "subchat_list",
@@ -83,8 +75,8 @@ io.on("connection", socket => {
       ts: new Date(),
       isScheduled: false
     };
-    await Message.create(msg);
-    io.to(data.roomId).emit("message", msg);
+    const saved = await Message.create(msg);
+    io.to(data.roomId).emit("message", saved.toObject());
   });
 
   socket.on(
@@ -101,16 +93,23 @@ io.on("connection", socket => {
         deliverAt
       };
       const saved = await Message.create(msg);
-      socket.emit("scheduled_confirmed", { msg: saved, delayMs, subRoom });
+      saved.scheduledSourceId = saved._id.toString();
+      await saved.save();
+      socket.emit("scheduled_confirmed", {
+        msg: saved.toObject(),
+        delayMs,
+        subRoom
+      });
 
       setTimeout(async () => {
         const deliverMsg = {
           ...msg,
           isScheduled: false,
-          ts: new Date()
+          ts: new Date(),
+          scheduledSourceId: saved._id.toString()
         };
-        await Message.create(deliverMsg);
-        io.to(roomId).emit("message", deliverMsg);
+        const delivered = await Message.create(deliverMsg);
+        io.to(roomId).emit("message", delivered.toObject());
         console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
       }, delayMs);
     }
