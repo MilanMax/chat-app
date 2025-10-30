@@ -76,12 +76,11 @@ io.on("connection", socket => {
     socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
 
     // ⏱ Kad istekne vreme, pošalji svima osim senderu
-   setTimeout(() => {
+  setTimeout(() => {
   const deliverMsg = {
     ...msg,
     isScheduled: false,
-    // ⚠️ NE menja se ID — koristi isti scheduleId
-    ts: new Date().toISOString()
+    deliveredAt: new Date().toISOString() // 👈 novo polje, ali NE menja se ts
   };
 
   if (!messageHistory[roomId]) messageHistory[roomId] = [];

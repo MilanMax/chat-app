@@ -251,7 +251,7 @@ export default function ChatRoom() {
               mine={m.username === myNickname}
               username={m.username}
               text={m.text}
-              ts={m.ts}
+              ts={m.deliveredAt || m.ts} 
               isScheduled={m.isScheduled}
               deliverAt={m.deliverAt}
             />
