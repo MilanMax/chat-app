@@ -203,7 +203,7 @@ export default function ChatRoom() {
       delayMs: selectedDelay,
       nickname: myNickname
     });
-@@ -192,57 +271,58 @@ export default function ChatRoom() {
+ export default function ChatRoom() {
                   ? "bg-indigo-600 border-indigo-400 text-white"
                   : "bg-slate-800 border-slate-700 text-gray-300"
               }`}
