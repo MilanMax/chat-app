@@ -59,6 +59,7 @@ io.on("connection", socket => {
     io.to(data.roomId).emit("message", msg);
   });
 
+  // 🕐 Zakazivanje poruke (sa ispravljenim duplikatom)
   socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
     const scheduleId = Date.now();
     const msg = {
@@ -71,8 +72,10 @@ io.on("connection", socket => {
       deliverAt: Date.now() + delayMs
     };
 
+    // ✅ Pošalji potvrdu samo senderu da prikaže "🕐"
     socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
 
+    // ⏱ Kad istekne vreme, pošalji svima osim senderu
     setTimeout(() => {
       const deliverMsg = {
         ...msg,
@@ -80,9 +83,15 @@ io.on("connection", socket => {
         id: Date.now(),
         ts: new Date().toISOString()
       };
+
       if (!messageHistory[roomId]) messageHistory[roomId] = [];
       messageHistory[roomId].push(deliverMsg);
-      io.to(roomId).emit("message", deliverMsg);
+
+      // ✅ Pošalji svima osim senderu
+      socket.to(roomId).emit("message", deliverMsg);
+
+      // ✅ Senderu pošalji “message_delivered” da zameni local 🕐 poruku
+      socket.emit("message_delivered", deliverMsg);
     }, delayMs);
   });
 

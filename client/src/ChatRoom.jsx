@@ -72,8 +72,11 @@ export default function ChatRoom() {
       setSubChats(prev => (prev.includes(name) ? prev : [...prev, name]));
     });
 
-    // ✅ FIX: replace scheduled message with real one
+    // 💬 normalne poruke od drugih korisnika
     socket.on("message", msg => {
+      // ignoriši sopstvene poruke (sender će ih dobiti kao “message_delivered”)
+      if (msg.username === myNickname) return;
+
       if (msg.subRoom !== activeSubChat) {
         setUnreadCounts(prev => ({
           ...prev,
@@ -82,26 +85,28 @@ export default function ChatRoom() {
         return;
       }
 
+      setMessages(prev => [...prev, msg]);
+    });
+
+    // 💌 kad server pošalje potvrdu da je scheduled poruka isporučena
+    socket.on("message_delivered", msg => {
       setMessages(prev => {
         const index = prev.findIndex(
           m =>
             m.isScheduled &&
             m.username === msg.username &&
-            m.text === msg.text &&
-            Math.abs((m.deliverAt || 0) - new Date(msg.ts).getTime()) <
-              10 * 60 * 1000 // do 10 min razlike
+            m.text === msg.text
         );
-
         if (index !== -1) {
           const updated = [...prev];
           updated[index] = { ...msg, isScheduled: false };
           return updated;
         }
-
         return [...prev, msg];
       });
     });
 
+    // 🕐 prikaz odmah kod sendera (pending)
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
       setMessages(prev => [...prev, msg]); // prikaži odmah
@@ -114,6 +119,7 @@ export default function ChatRoom() {
       socket.off("subchat_list");
       socket.off("subchat_created");
       socket.off("message");
+      socket.off("message_delivered");
       socket.off("scheduled_confirmed");
     };
   }, [chatId, activeSubChat, myNickname, navigate]);
