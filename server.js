@@ -21,12 +21,13 @@ const io = new Server(server, {
 });
 
 const roomSubchats = {};
-const messageHistory = {};
+const messageHistory = {}; // roomId -> [delivered messages only]
 
-// 🧩 SOCKET.IO LOGIKA
+// 🧩 SOCKET IO LOGIKA
 io.on("connection", socket => {
   console.log("✅ Connected:", socket.id);
 
+  // --- JOIN ROOM ---
   socket.on("join_room", ({ roomId, subRoom, nickname }) => {
     socket.join(roomId);
     socket.data = { roomId, nickname };
@@ -34,10 +35,12 @@ io.on("connection", socket => {
     if (!roomSubchats[roomId]) roomSubchats[roomId] = ["default"];
     if (!messageHistory[roomId]) messageHistory[roomId] = [];
 
+    // šaljemo samo isporučene poruke
     socket.emit("chat_history", messageHistory[roomId]);
     socket.emit("subchat_list", roomSubchats[roomId]);
   });
 
+  // --- CREATE SUBCHAT ---
   socket.on("create_subchat", ({ roomId, subRoom }) => {
     if (!roomSubchats[roomId]) roomSubchats[roomId] = ["default"];
     if (!roomSubchats[roomId].includes(subRoom)) {
@@ -46,6 +49,7 @@ io.on("connection", socket => {
     }
   });
 
+  // --- SEND MESSAGE (odmah) ---
   socket.on("send_message", data => {
     const msg = {
       id: Date.now(),
@@ -54,16 +58,20 @@ io.on("connection", socket => {
       subRoom: data.subRoom || "default",
       ts: new Date().toISOString(),
       isScheduled: false,
-      senderId: socket.id              // 👈 bitno
+      senderId: socket.id
     };
 
     if (!messageHistory[data.roomId]) messageHistory[data.roomId] = [];
     messageHistory[data.roomId].push(msg);
 
-    io.to(data.roomId).emit("message", msg);
+    // ✅ Pošalji svima osim senderu
+    socket.to(data.roomId).emit("message", msg);
+
+    // ✅ Samo senderu pošalji potvrdu da zameni svoju poruku
+    socket.emit("message_delivered", msg);
   });
 
-  // 🕐 Zakazivanje poruke
+  // --- SCHEDULE MESSAGE ---
   socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
     const scheduleId = Date.now();
     const msg = {
@@ -74,29 +82,32 @@ io.on("connection", socket => {
       ts: new Date().toISOString(),
       deliverAt: Date.now() + delayMs,
       isScheduled: true,
-      senderId: socket.id              // 👈 bitno
+      senderId: socket.id
     };
 
     // 📩 Sender vidi pending odmah
     socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
 
-    // ⏱ Kad istekne vreme, pošalji ostalima i zameni kod sendera
+    // ⏱ Kada istekne vreme — pošalji svima osim senderu, a njemu zamenu
     setTimeout(() => {
       const deliverMsg = {
         ...msg,
         isScheduled: false,
         deliveredAt: new Date().toISOString()
-        // id i ts ostaju isti
       };
 
       if (!messageHistory[roomId]) messageHistory[roomId] = [];
       messageHistory[roomId].push(deliverMsg);
 
+      // ✅ Svima osim senderu
       socket.to(roomId).emit("message", deliverMsg);
+
+      // ✅ Samo senderu
       socket.emit("message_delivered", deliverMsg);
     }, delayMs);
   });
 
+  // --- DISCONNECT ---
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
 
