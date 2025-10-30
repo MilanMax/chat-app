@@ -21,9 +21,9 @@ const io = new Server(server, {
 });
 
 const roomSubchats = {};
-const messageHistory = {};
+const messageHistory = {}; // roomId -> [delivered messages only]
 
-// 🧩 SOCKET IO LOGIKA
+// SOCKET IO
 io.on("connection", socket => {
   console.log("✅ Connected:", socket.id);
 
@@ -34,6 +34,7 @@ io.on("connection", socket => {
     if (!roomSubchats[roomId]) roomSubchats[roomId] = ["default"];
     if (!messageHistory[roomId]) messageHistory[roomId] = [];
 
+    // šaljemo SAMO isporučene poruke (nema pending-a u istoriji)
     socket.emit("chat_history", messageHistory[roomId]);
     socket.emit("subchat_list", roomSubchats[roomId]);
   });
@@ -48,56 +49,59 @@ io.on("connection", socket => {
 
   socket.on("send_message", data => {
     const msg = {
-      id: Date.now(),
+      id: Date.now(),                         // jedinstven ID
       username: data.nickname,
       text: data.text,
       subRoom: data.subRoom || "default",
-      ts: new Date().toISOString()
+      ts: new Date().toISOString(),           // vreme nastanka
+      isScheduled: false
     };
     if (!messageHistory[data.roomId]) messageHistory[data.roomId] = [];
     messageHistory[data.roomId].push(msg);
     io.to(data.roomId).emit("message", msg);
   });
 
-  // 🕐 Zakazivanje poruke (sa ispravljenim duplikatom)
+  // Zakazivanje
   socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
-    const scheduleId = Date.now();
+    const scheduleId = Date.now();            // stabilan ID za pending + delivered
     const msg = {
       id: scheduleId,
       username: nickname,
       text,
       subRoom,
-      ts: new Date().toISOString(),
-      isScheduled: true,
-      deliverAt: Date.now() + delayMs
+      ts: new Date().toISOString(),           // vreme KADA JE ZAKAŽENO (OSTAJE ISTO)
+      deliverAt: Date.now() + delayMs,        // planirano vreme
+      isScheduled: true
     };
 
-    // ✅ Pošalji potvrdu samo senderu da prikaže "🕐"
+    // 1) samo sender vidi pending odmah
     socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
 
-    // ⏱ Kad istekne vreme, pošalji svima osim senderu
-  setTimeout(() => {
-  const deliverMsg = {
-    ...msg,
-    isScheduled: false,
-    deliveredAt: new Date().toISOString() // 👈 novo polje, ali NE menja se ts
-  };
+    // 2) isporuka kad istekne vreme
+    setTimeout(() => {
+      const deliverMsg = {
+        ...msg,
+        isScheduled: false,
+        deliveredAt: new Date().toISOString() // pravo vreme slanja (novo polje)
+        // id i ts ostaju IDENTIČNI -> frontend će zameniti pending
+      };
 
-  if (!messageHistory[roomId]) messageHistory[roomId] = [];
-  messageHistory[roomId].push(deliverMsg);
+      if (!messageHistory[roomId]) messageHistory[roomId] = [];
+      messageHistory[roomId].push(deliverMsg);
 
-  socket.to(roomId).emit("message", deliverMsg);
-  socket.emit("message_delivered", deliverMsg);
-}, delayMs);
+      // recipienti dobijaju realnu poruku
+      socket.to(roomId).emit("message", deliverMsg);
+      // sender dobija signal da zameni pending
+      socket.emit("message_delivered", deliverMsg);
+    }, delayMs);
+  });
 
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
 
-// 🧩 SERVE FRONTEND BUILD
+// SERVE FRONTEND BUILD
 const clientPath = path.join(__dirname, "../client/dist");
 app.use(express.static(clientPath));
-
-// fallback za React Router (sve nepoznate rute vraćaju index.html)
 app.get("*", (req, res) => {
   res.sendFile(path.join(clientPath, "index.html"));
 });

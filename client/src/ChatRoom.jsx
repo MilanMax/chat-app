@@ -9,7 +9,8 @@ export default function ChatRoom() {
   const navigate = useNavigate();
   const myNickname = localStorage.getItem(`nickname_${chatId}`) || "Guest";
 
-  const [messages, setMessages] = useState([]);
+  // 👉 Držimo poruke kao MAPU po ID-u, da se pending i delivered NIKAD ne dupliraju
+  const [messagesById, setMessagesById] = useState({});
   const [pendingText, setPendingText] = useState("");
   const [subChats, setSubChats] = useState(["default"]);
   const [activeSubChat, setActiveSubChat] = useState("default");
@@ -22,7 +23,12 @@ export default function ChatRoom() {
 
   const bottomRef = useRef(null);
 
-  // Load saved state
+  // Helper – dobij listu poruka filtriranih i sortiranih
+  const sortedMessages = Object.values(messagesById)
+    .filter(m => m.subRoom === activeSubChat)
+    .sort((a, b) => new Date((a.deliveredAt || a.ts)) - new Date((b.deliveredAt || b.ts)));
+
+  // Load saved state (subchats, active tab, draft)
   useEffect(() => {
     const saved = localStorage.getItem(`chat_state_${chatId}`);
     if (saved) {
@@ -31,9 +37,7 @@ export default function ChatRoom() {
         if (Array.isArray(data.subChats)) setSubChats(data.subChats);
         if (data.activeSubChat) setActiveSubChat(data.activeSubChat);
         if (data.pendingText) setPendingText(data.pendingText);
-      } catch {
-        console.warn("⚠️ Failed to parse local chat state for", chatId);
-      }
+      } catch {}
     }
   }, [chatId]);
 
@@ -46,7 +50,7 @@ export default function ChatRoom() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [sortedMessages.length]);
 
   // SOCKET EVENTS
   useEffect(() => {
@@ -62,19 +66,26 @@ export default function ChatRoom() {
       nickname: myNickname
     });
 
-    socket.on("chat_history", history => setMessages(history || []));
+    socket.on("chat_history", history => {
+      // server šalje samo delivered poruke — pretvori u mapu
+      const map = {};
+      for (const m of history || []) map[m.id] = m;
+      setMessagesById(map);
+    });
+
     socket.on("subchat_list", list => {
       if (Array.isArray(list) && list.length > 0) {
         setSubChats(prev => [...new Set([...prev, ...list])]);
       }
     });
+
     socket.on("subchat_created", name => {
       setSubChats(prev => (prev.includes(name) ? prev : [...prev, name]));
     });
 
-    // 💬 normalne poruke od drugih korisnika
+    // 1) normalne poruke od drugih
     socket.on("message", msg => {
-      // ignoriši sopstvene poruke (sender će ih dobiti kao “message_delivered”)
+      // ako je poruka "moje" korisničko ime na ovoj strani, ignoriši — sender dobija message_delivered
       if (msg.username === myNickname) return;
 
       if (msg.subRoom !== activeSubChat) {
@@ -82,31 +93,28 @@ export default function ChatRoom() {
           ...prev,
           [msg.subRoom]: (prev[msg.subRoom] || 0) + 1
         }));
-        return;
       }
 
-      setMessages(prev => [...prev, msg]);
+      setMessagesById(prev => ({
+        ...prev,
+        [msg.id]: { ...(prev[msg.id] || {}), ...msg, isScheduled: false }
+      }));
     });
 
-    // 💌 kad server pošalje potvrdu da je scheduled poruka isporučena
-    socket.on("message_delivered", msg => {
-  setMessages(prev => {
-    const index = prev.findIndex(m => m.id === msg.id);
-    if (index !== -1) {
-      const updated = [...prev];
-      updated[index] = { ...msg, isScheduled: false };
-      return updated;
-    }
-    return [...prev, msg];
-  });
-});
-
-    // 🕐 prikaz odmah kod sendera (pending)
+    // 2) pending potvrda samo za sender-a
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
-      setMessages(prev => [...prev, msg]); // prikaži odmah
+      setMessagesById(prev => ({ ...prev, [msg.id]: msg })); // pending poruka
       setNotification(`Scheduled for ${Math.round(delayMs / 60000)} min`);
-      setTimeout(() => setNotification(null), 4000);
+      setTimeout(() => setNotification(null), 3000);
+    });
+
+    // 3) kada isporuka stigne — ZAMENJUJEMO pending po ID-u
+    socket.on("message_delivered", msg => {
+      setMessagesById(prev => ({
+        ...prev,
+        [msg.id]: { ...(prev[msg.id] || {}), ...msg, isScheduled: false }
+      }));
     });
 
     return () => {
@@ -114,8 +122,8 @@ export default function ChatRoom() {
       socket.off("subchat_list");
       socket.off("subchat_created");
       socket.off("message");
-      socket.off("message_delivered");
       socket.off("scheduled_confirmed");
+      socket.off("message_delivered");
     };
   }, [chatId, activeSubChat, myNickname, navigate]);
 
@@ -170,9 +178,7 @@ export default function ChatRoom() {
           <div className="text-center font-semibold text-gray-100 text-sm">
             Private Chat Room
           </div>
-          <div className="text-center text-[0.7rem] text-slate-500">
-            Share this link:
-          </div>
+          <div className="text-center text-[0.7rem] text-slate-500">Share this link:</div>
           <div className="text-center text-xs text-indigo-400 mt-1 break-all">
             {window.location.href}
           </div>
@@ -208,11 +214,7 @@ export default function ChatRoom() {
               }`}
             >
               {sub === "default" ? "General" : sub}
-              {unread > 0 && (
-                <span className="ml-1 text-[0.7rem] text-indigo-300">
-                  ({unread})
-                </span>
-              )}
+              {unread > 0 && <span className="ml-1 text-[0.7rem] text-indigo-300">({unread})</span>}
             </button>
           );
         })}
@@ -232,10 +234,7 @@ export default function ChatRoom() {
             value={newChatName}
             onChange={e => setNewChatName(e.target.value)}
           />
-          <button
-            className="bg-indigo-600 text-xs px-3 rounded-lg"
-            onClick={addNewChat}
-          >
+          <button className="bg-indigo-600 text-xs px-3 rounded-lg" onClick={addNewChat}>
             Add
           </button>
         </div>
@@ -243,19 +242,18 @@ export default function ChatRoom() {
 
       {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
-        {messages
-          .filter(m => m.subRoom === activeSubChat)
-          .map(m => (
-            <MessageBubble
-              key={m.id}
-              mine={m.username === myNickname}
-              username={m.username}
-              text={m.text}
-              ts={m.deliveredAt || m.ts} 
-              isScheduled={m.isScheduled}
-              deliverAt={m.deliverAt}
-            />
-          ))}
+        {sortedMessages.map(m => (
+          <MessageBubble
+            key={m.id} // STABILAN ključ: nema duplikata
+            mine={m.username === myNickname}
+            username={m.username}
+            text={m.text}
+            // prikazuj realno vreme kad postoji, inače vreme zakazivanja
+            ts={m.deliveredAt || m.ts}
+            isScheduled={m.isScheduled}
+            deliverAt={m.deliverAt}
+          />
+        ))}
         <div ref={bottomRef} />
       </div>
 
@@ -289,9 +287,7 @@ export default function ChatRoom() {
 
         {showSchedule && (
           <div className="mt-2 bg-slate-800 border border-slate-700 rounded-lg p-3 text-sm text-gray-200">
-            <div className="mb-2 font-semibold text-indigo-400">
-              Send after:
-            </div>
+            <div className="mb-2 font-semibold text-indigo-400">Send after:</div>
             <div className="flex gap-2 flex-wrap">
               {[1, 2, 5, 10, 30, 60, 180, 360].map(min => (
                 <button
@@ -308,21 +304,14 @@ export default function ChatRoom() {
               ))}
             </div>
             <div className="mt-3 flex justify-end">
-              <button
-                className="bg-indigo-600 px-4 py-1 rounded-lg text-sm font-semibold"
-                onClick={scheduleMessage}
-              >
+              <button className="bg-indigo-600 px-4 py-1 rounded-lg text-sm font-semibold" onClick={scheduleMessage}>
                 Confirm
               </button>
             </div>
           </div>
         )}
 
-        {notification && (
-          <div className="text-center text-xs text-green-400 mt-2">
-            {notification}
-          </div>
-        )}
+        {notification && <div className="text-center text-xs text-green-400 mt-2">{notification}</div>}
       </div>
     </div>
   );
