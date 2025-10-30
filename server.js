@@ -21,9 +21,9 @@ const io = new Server(server, {
 });
 
 const roomSubchats = {};
-const messageHistory = {}; // roomId -> [delivered messages only]
+const messageHistory = {};
 
-// SOCKET IO
+// 🧩 SOCKET.IO LOGIKA
 io.on("connection", socket => {
   console.log("✅ Connected:", socket.id);
 
@@ -34,7 +34,6 @@ io.on("connection", socket => {
     if (!roomSubchats[roomId]) roomSubchats[roomId] = ["default"];
     if (!messageHistory[roomId]) messageHistory[roomId] = [];
 
-    // šaljemo SAMO isporučene poruke (nema pending-a u istoriji)
     socket.emit("chat_history", messageHistory[roomId]);
     socket.emit("subchat_list", roomSubchats[roomId]);
   });
@@ -49,49 +48,51 @@ io.on("connection", socket => {
 
   socket.on("send_message", data => {
     const msg = {
-      id: Date.now(),                         // jedinstven ID
+      id: Date.now(),
       username: data.nickname,
       text: data.text,
       subRoom: data.subRoom || "default",
-      ts: new Date().toISOString(),           // vreme nastanka
-      isScheduled: false
+      ts: new Date().toISOString(),
+      isScheduled: false,
+      senderId: socket.id              // 👈 bitno
     };
+
     if (!messageHistory[data.roomId]) messageHistory[data.roomId] = [];
     messageHistory[data.roomId].push(msg);
+
     io.to(data.roomId).emit("message", msg);
   });
 
-  // Zakazivanje
+  // 🕐 Zakazivanje poruke
   socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
-    const scheduleId = Date.now();            // stabilan ID za pending + delivered
+    const scheduleId = Date.now();
     const msg = {
       id: scheduleId,
       username: nickname,
       text,
       subRoom,
-      ts: new Date().toISOString(),           // vreme KADA JE ZAKAŽENO (OSTAJE ISTO)
-      deliverAt: Date.now() + delayMs,        // planirano vreme
-      isScheduled: true
+      ts: new Date().toISOString(),
+      deliverAt: Date.now() + delayMs,
+      isScheduled: true,
+      senderId: socket.id              // 👈 bitno
     };
 
-    // 1) samo sender vidi pending odmah
+    // 📩 Sender vidi pending odmah
     socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
 
-    // 2) isporuka kad istekne vreme
+    // ⏱ Kad istekne vreme, pošalji ostalima i zameni kod sendera
     setTimeout(() => {
       const deliverMsg = {
         ...msg,
         isScheduled: false,
-        deliveredAt: new Date().toISOString() // pravo vreme slanja (novo polje)
-        // id i ts ostaju IDENTIČNI -> frontend će zameniti pending
+        deliveredAt: new Date().toISOString()
+        // id i ts ostaju isti
       };
 
       if (!messageHistory[roomId]) messageHistory[roomId] = [];
       messageHistory[roomId].push(deliverMsg);
 
-      // recipienti dobijaju realnu poruku
       socket.to(roomId).emit("message", deliverMsg);
-      // sender dobija signal da zameni pending
       socket.emit("message_delivered", deliverMsg);
     }, delayMs);
   });
@@ -99,7 +100,7 @@ io.on("connection", socket => {
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
 
-// SERVE FRONTEND BUILD
+// 🧩 SERVE FRONTEND BUILD
 const clientPath = path.join(__dirname, "../client/dist");
 app.use(express.static(clientPath));
 app.get("*", (req, res) => {
