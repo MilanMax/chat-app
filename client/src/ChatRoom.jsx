@@ -265,16 +265,16 @@ export default function ChatRoom() {
 
   const id = setInterval(() => {
     if (document.visibilityState === "visible") {
-      console.log("♻️ Sending refresh signal to server...");
-      socket.emit("client_refresh", {
-        reason: "auto-refresh after pending",
-        time: new Date().toISOString(),
-      });
+      console.log("♻️ Sending refresh log to server...");
 
-      // ⏳ Sačekaj 300ms da emit ode pre reload-a
-      setTimeout(() => {
-        window.location.reload();
-      }, 300);
+      // 📡 ping server pre reload-a
+      fetch("/api/refresh-log", { method: "POST" })
+        .catch(() => {})
+        .finally(() => {
+          setTimeout(() => {
+            window.location.reload();
+          }, 300);
+        });
     }
   }, 2000);
 
