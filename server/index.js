@@ -92,13 +92,13 @@ io.on("connection", socket => {
     io.to(data.roomId).emit("message", saved.toObject());
   });
 
-  // --- SCHEDULE MESSAGE (sa ispravnim italic prikazom) ---
+  // --- SCHEDULE MESSAGE (FIXED - bez duplikata) ---
   socket.on(
     "schedule_message",
     async ({ roomId, subRoom, text, delayMs, nickname }) => {
       const deliverAt = new Date(Date.now() + delayMs);
 
-      // 🟣 1️⃣ Kreiramo pending poruku koja se vidi odmah (italic)
+      // 🟣 1️⃣ Kreiramo JEDNU poruku koja će biti scheduled
       const scheduled = await Message.create({
         roomId,
         subRoom,
@@ -107,41 +107,39 @@ io.on("connection", socket => {
         ts: new Date(),
         isScheduled: true,
         deliverAt,
-        scheduledSourceId: null
+        scheduledSourceId: null // biće popunjen posle
       });
 
-      // ✅ Pošalji samo senderu da prikaže italic "Scheduled for ..."
-      io.to(socket.id).emit("scheduled_confirmed", {
-        msg: {
-          ...scheduled.toObject(),
-          scheduledDelivered: false,
-          isScheduled: true,
-          deliverAt
-        },
+      // ✅ Postavi scheduledSourceId na sopstveni _id
+      scheduled.scheduledSourceId = scheduled._id.toString();
+      await scheduled.save();
+
+      // ✅ Pošalji samo senderu da prikaže scheduled poruku sa ⏰
+      socket.emit("scheduled_confirmed", {
+        msg: scheduled.toObject(),
         delayMs,
         subRoom
       });
-      console.log("📤 EMITTED scheduled_confirmed to", socket.id);
+      console.log("📤 Emitted scheduled_confirmed to sender:", socket.id);
 
-      // 🟢 2️⃣ Nakon isteka delay-a — šaljemo isporučenu poruku
+      // 🟢 2️⃣ Nakon isteka delay-a – UPDATE postojeću poruku
       setTimeout(async () => {
-        const deliverMsg = {
-          roomId,
-          subRoom,
-          username: nickname,
-          text,
-          ts: new Date(),
-          isScheduled: false,
-          deliverAt,
-          scheduledSourceId: scheduled._id.toString(),
-          scheduledDelivered: true
-        };
+        // Pronađi scheduled poruku i update-uj je
+        const updated = await Message.findByIdAndUpdate(
+          scheduled._id,
+          {
+            isScheduled: false,
+            ts: new Date(), // vreme dostave
+            scheduledDelivered: true
+          },
+          { new: true }
+        );
 
-        const delivered = await Message.create(deliverMsg);
-
-        // ✅ Emituj svima u sobi (uključujući pošiljaoca)
-        io.to(roomId).emit("message", delivered.toObject());
-        console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
+        if (updated) {
+          // ✅ Emituj svima (uključujući pošiljaoca)
+          io.to(roomId).emit("message", updated.toObject());
+          console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
+        }
       }, delayMs);
     }
   );

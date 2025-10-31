@@ -4,26 +4,24 @@ import { socket } from "./socket.js";
 import MessageBubble from "./MessageBubble.jsx";
 import UsernameBanner from "./UsernameBanner.jsx";
 
-useEffect(() => {
-  if (!socket.connected) {
-    socket.connect();
-  }
-}, []);
-
+// ✅ KLJUČNA PROMENA: Koristimo scheduledSourceId kao primarni key
 const deriveKey = msg => {
   if (!msg) return null;
-
-  if (msg.scheduledSourceId) return msg.scheduledSourceId;
-
+  
+  // Ako poruka ima scheduledSourceId, to je njen key
+  if (msg.scheduledSourceId) {
+    return msg.scheduledSourceId;
+  }
+  
+  // Ako poruka ima _id (iz baze), koristi ga
+  if (msg._id) {
+    return msg._id.toString();
+  }
+  
+  // Fallback za poruke bez ID-a
   return (
     msg._storageKey ||
-    (msg.deliverAt
-      ? `${msg.username || ""}__${msg.subRoom || "default"}__${new Date(
-          msg.deliverAt
-        ).getTime()}__${(msg.text || "").trim()}`
-      : null) ||
     msg.id ||
-    msg._id ||
     msg.tempId ||
     (msg.ts
       ? `${msg.username || "anon"}__${msg.subRoom || "default"}__${new Date(
@@ -39,19 +37,20 @@ const mergeMessage = (collection, incoming) => {
 
   const previous = collection[key] || {};
 
+  // ✅ Merge logika koja čuva sve važne podatke
   const merged = {
     ...previous,
     ...incoming,
+    _id: incoming._id || previous._id,
     scheduledSourceId:
       incoming.scheduledSourceId || previous.scheduledSourceId || null,
     isScheduled:
       incoming.isScheduled ?? previous.isScheduled ?? false,
     deliverAt: incoming.deliverAt || previous.deliverAt || null,
-    deliveredAt: incoming.deliveredAt || previous.deliveredAt || null,
+    deliveredAt: incoming.deliveredAt || previous.deliveredAt || incoming.ts || previous.ts,
     scheduledDelivered:
       incoming.scheduledDelivered ??
       previous.scheduledDelivered ??
-      (!incoming.isScheduled && previous.isScheduled) ??
       false,
     _storageKey: key
   };
@@ -131,34 +130,33 @@ export default function ChatRoom() {
       setSubChats(prev => (prev.includes(name) ? prev : [...prev, name]));
     });
 
-    // ✅ Glavni fix — bez dupliranja, sa unread logikom
+    // ✅ Primanje poruka - handluje i obične i delivered scheduled poruke
     socket.on("message", msg => {
-      setMessagesById(prev => {
-        const key = deriveKey(msg);
-        if (key && prev[key]) return prev; // spreči duplikate
+      // Ako poruka dolazi od mene i nije delivered scheduled, ignoriši
+      // (već sam je video kad sam je poslao)
+      if (msg.username === myNickname && !msg.scheduledDelivered) {
+        return;
+      }
 
-        if (msg.subRoom !== activeSubChat) {
-          setUnreadCounts(prevUnread => ({
-            ...prevUnread,
-            [msg.subRoom]: (prevUnread[msg.subRoom] || 0) + 1
-          }));
-        }
+      // Proveri da li treba dodati unread count
+      if (msg.subRoom !== activeSubChat) {
+        setUnreadCounts(prev => ({
+          ...prev,
+          [msg.subRoom]: (prev[msg.subRoom] || 0) + 1
+        }));
+      }
 
-        return mergeMessage(prev, msg);
-      });
+      upsertMessage(msg);
     });
 
-    // ✅ Fix za scheduled poruke (prikaz italika)
+    // ✅ Scheduled potvrda - samo za sendera
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
-
-      const deliverAt = Date.now() + delayMs;
 
       const enriched = {
         ...msg,
         isScheduled: true,
         scheduledDelivered: false,
-        deliverAt,
         _storageKey: deriveKey(msg)
       };
 
@@ -167,8 +165,7 @@ export default function ChatRoom() {
       setNotification(`Scheduled for ${Math.round(delayMs / 60000)} min`);
       setTimeout(() => setNotification(null), 3000);
 
-      console.log("📩 scheduled_confirmed event:", msg);
-      console.log("➡️ isScheduled:", msg.isScheduled, "deliverAt:", msg.deliverAt);
+      console.log("📩 scheduled_confirmed:", enriched);
     });
 
     return () => {
@@ -183,6 +180,20 @@ export default function ChatRoom() {
   function sendMessage() {
     const txt = pendingText.trim();
     if (!txt) return;
+    
+    // Optimistično dodaj poruku odmah
+    const tempMsg = {
+      tempId: Date.now().toString(),
+      roomId: chatId,
+      subRoom: activeSubChat,
+      username: myNickname,
+      text: txt,
+      ts: new Date(),
+      isScheduled: false
+    };
+    
+    setMessagesById(prev => mergeMessage(prev, tempMsg));
+    
     socket.emit("send_message", {
       roomId: chatId,
       subRoom: activeSubChat,
