@@ -45,7 +45,6 @@ const mergeMessage = (collection, incoming) => {
       ...collection[incoming.scheduledSourceId],
       scheduledDelivered: true,
     };
-
     return {
       ...collection,
       [incoming.scheduledSourceId]: updatedScheduled, // označi staru (⏰) kao delivered
@@ -57,7 +56,6 @@ const mergeMessage = (collection, incoming) => {
   const hasScheduledContext = Boolean(
     incoming.deliverAt || previous.deliverAt || incoming.isScheduled
   );
-
   const isScheduledFlag =
     incoming.isScheduled || previous.isScheduled || hasScheduledContext;
 
@@ -72,7 +70,6 @@ const mergeMessage = (collection, incoming) => {
     },
   };
 };
-
 
 export default function ChatRoom() {
   const { chatId } = useParams();
