@@ -4,6 +4,12 @@ import { socket } from "./socket.js";
 import MessageBubble from "./MessageBubble.jsx";
 import UsernameBanner from "./UsernameBanner.jsx";
 
+useEffect(() => {
+  if (!socket.connected) {
+    socket.connect();
+  }
+}, []);
+
 const deriveKey = msg => {
   if (!msg) return null;
 

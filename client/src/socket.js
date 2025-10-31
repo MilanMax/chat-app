@@ -1,8 +1,9 @@
 import { io } from "socket.io-client";
 
-const URL =
-  window.location.hostname === "localhost"
-    ? "http://localhost:4000"
-    : window.location.origin;
-
-export const socket = io(URL);
+export const socket = io("http://localhost:10000", {
+  transports: ["websocket"],
+  autoConnect: true,
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 1000,
+});
