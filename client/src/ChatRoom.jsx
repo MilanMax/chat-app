@@ -6,13 +6,9 @@ import UsernameBanner from "./UsernameBanner.jsx";
 
 const deriveKey = msg => {
   if (!msg) return null;
-  
-  // KLJUČNA PROMENA: Ako poruka ima scheduledSourceId, koristi njega kao key
-  // Tako će delivered poruka update-ovati originalnu scheduled poruku
-  if (msg.scheduledSourceId) {
-    return msg.scheduledSourceId;
-  }
-  
+
+  if (msg.scheduledSourceId) return msg.scheduledSourceId;
+
   return (
     msg._storageKey ||
     (msg.deliverAt
@@ -36,50 +32,25 @@ const mergeMessage = (collection, incoming) => {
   if (!key) return collection;
 
   const previous = collection[key] || {};
-  const hasScheduledContext = Boolean(
-    incoming.scheduledSourceId ||
-      previous.scheduledSourceId ||
-      incoming.deliverAt ||
-      previous.deliverAt
-  );
-  const isScheduledFlag =
-    Boolean(previous.isScheduled) ||
-    Boolean(incoming.isScheduled) ||
-    hasScheduledContext;
 
-  let scheduledDeliveredFlag =
-    previous.scheduledDelivered ?? incoming.scheduledDelivered ?? false;
-
-  // Ako dolazi poruka koja NIJE scheduled ali ima scheduledSourceId,
-  // to znači da je ovo delivered verzija
-  if (!incoming.isScheduled && incoming.scheduledSourceId) {
-    scheduledDeliveredFlag = true;
-  }
-
-  // Ako prethodna poruka bila scheduled a nova nije, takođe je delivered
-  if (previous.isScheduled && !incoming.isScheduled) {
-    scheduledDeliveredFlag = true;
-  }
-
-  const deliverAtValue = incoming.deliverAt || previous.deliverAt;
-  const deliveredAtValue =
-    incoming.deliveredAt ||
-    (!incoming.isScheduled ? incoming.ts : previous.deliveredAt);
-
-  return {
-    ...collection,
-    [key]: {
-      ...previous,
-      ...incoming,
-      scheduledSourceId:
-        incoming.scheduledSourceId || previous.scheduledSourceId || null,
-      isScheduled: isScheduledFlag,
-      deliverAt: deliverAtValue,
-      deliveredAt: deliveredAtValue,
-      scheduledDelivered: scheduledDeliveredFlag,
-      _storageKey: key
-    }
+  const merged = {
+    ...previous,
+    ...incoming,
+    scheduledSourceId:
+      incoming.scheduledSourceId || previous.scheduledSourceId || null,
+    isScheduled:
+      incoming.isScheduled ?? previous.isScheduled ?? false,
+    deliverAt: incoming.deliverAt || previous.deliverAt || null,
+    deliveredAt: incoming.deliveredAt || previous.deliveredAt || null,
+    scheduledDelivered:
+      incoming.scheduledDelivered ??
+      previous.scheduledDelivered ??
+      (!incoming.isScheduled && previous.isScheduled) ??
+      false,
+    _storageKey: key
   };
+
+  return { ...collection, [key]: merged };
 };
 
 export default function ChatRoom() {
@@ -154,27 +125,39 @@ export default function ChatRoom() {
       setSubChats(prev => (prev.includes(name) ? prev : [...prev, name]));
     });
 
+    // ✅ Glavni fix — bez dupliranja, sa unread logikom
     socket.on("message", msg => {
-  // Spreči dupliranje (ako poruka već postoji u kolekciji)
-  setMessagesById(prev => {
-    const key = deriveKey(msg);
-    if (key && prev[key]) return prev; // već postoji, preskoči
+      setMessagesById(prev => {
+        const key = deriveKey(msg);
+        if (key && prev[key]) return prev; // spreči duplikate
 
-    // Ako poruka pripada drugom subchatu, povećaj unread
-    if (msg.subRoom !== activeSubChat) {
-      setUnreadCounts(prevUnread => ({
-        ...prevUnread,
-        [msg.subRoom]: (prevUnread[msg.subRoom] || 0) + 1
-      }));
-    }
+        if (msg.subRoom !== activeSubChat) {
+          setUnreadCounts(prevUnread => ({
+            ...prevUnread,
+            [msg.subRoom]: (prevUnread[msg.subRoom] || 0) + 1
+          }));
+        }
 
-    return mergeMessage(prev, msg);
-  });
-});
+        return mergeMessage(prev, msg);
+      });
+    });
 
+    // ✅ Fix za scheduled poruke (prikaz italika)
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
-      upsertMessage({ ...msg, scheduledDelivered: false, isScheduled: true });
+
+      const deliverAt = Date.now() + delayMs;
+
+      const enriched = {
+        ...msg,
+        isScheduled: true,
+        scheduledDelivered: false,
+        deliverAt,
+        _storageKey: deriveKey(msg)
+      };
+
+      setMessagesById(prev => mergeMessage(prev, enriched));
+
       setNotification(`Scheduled for ${Math.round(delayMs / 60000)} min`);
       setTimeout(() => setNotification(null), 3000);
     });
