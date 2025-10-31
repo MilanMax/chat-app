@@ -33,30 +33,46 @@ const deriveKey = msg => {
 
 const mergeMessage = (collection, incoming) => {
   const key = deriveKey(incoming);
-  if (!key) return collection;
+  if (!key) {
+    return collection;
+  }
 
   const previous = collection[key] || {};
 
-  // ✅ Merge logika koja čuva sve važne podatke
-  const merged = {
-    ...previous,
-    ...incoming,
-    _id: incoming._id || previous._id,
-    scheduledSourceId:
-      incoming.scheduledSourceId || previous.scheduledSourceId || null,
-    isScheduled:
-      incoming.isScheduled ?? previous.isScheduled ?? false,
-    deliverAt: incoming.deliverAt || previous.deliverAt || null,
-    deliveredAt: incoming.deliveredAt || previous.deliveredAt || incoming.ts || previous.ts,
-    scheduledDelivered:
-      incoming.scheduledDelivered ??
-      previous.scheduledDelivered ??
-      false,
-    _storageKey: key
-  };
+  // 🔍 Ako stigne poruka sa istim scheduledSourceId → to je delivered verzija ranije scheduled poruke
+  if (incoming.scheduledSourceId && collection[incoming.scheduledSourceId]) {
+    const updatedScheduled = {
+      ...collection[incoming.scheduledSourceId],
+      scheduledDelivered: true,
+    };
 
-  return { ...collection, [key]: merged };
+    return {
+      ...collection,
+      [incoming.scheduledSourceId]: updatedScheduled, // označi staru (⏰) kao delivered
+      [key]: { ...incoming, isScheduled: false }, // nova poruka bez ⏰
+    };
+  }
+
+  // 🔍 Ako je poruka scheduled ili ima deliverAt
+  const hasScheduledContext = Boolean(
+    incoming.deliverAt || previous.deliverAt || incoming.isScheduled
+  );
+
+  const isScheduledFlag =
+    incoming.isScheduled || previous.isScheduled || hasScheduledContext;
+
+  // 🔧 Standardno merge-ovanje (za sve ostale poruke)
+  return {
+    ...collection,
+    [key]: {
+      ...previous,
+      ...incoming,
+      isScheduled: isScheduledFlag,
+      _storageKey: key,
+    },
+  };
 };
+
 
 export default function ChatRoom() {
   const { chatId } = useParams();
