@@ -257,6 +257,13 @@ export default function ChatRoom() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sortedMessages]);
 
+  useEffect(() => {
+  const id = setInterval(() => {
+    window.location.reload();
+  }, 2000); // 2s
+  return () => clearInterval(id);
+}, []);
+
   return (
     <div className="flex flex-col h-screen bg-bg text-white">
       <UsernameBanner chatId={chatId} nickname={myNickname} />
