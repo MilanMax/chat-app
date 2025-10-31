@@ -144,6 +144,8 @@ export default function ChatRoom() {
 
     // ✅ Fix za scheduled poruke (prikaz italika)
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
+      console.log("📩 scheduled_confirmed event:", msg);
+      console.log("➡️ isScheduled:", msg.isScheduled, "deliverAt:", msg.deliverAt);
       if (subRoom !== activeSubChat) return;
 
       const deliverAt = Date.now() + delayMs;
