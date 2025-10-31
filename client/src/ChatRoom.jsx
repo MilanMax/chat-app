@@ -155,17 +155,22 @@ export default function ChatRoom() {
     });
 
     socket.on("message", msg => {
-      if (msg.senderId === socket.id) return;
+  // Spreči dupliranje (ako poruka već postoji u kolekciji)
+  setMessagesById(prev => {
+    const key = deriveKey(msg);
+    if (key && prev[key]) return prev; // već postoji, preskoči
 
-      if (msg.subRoom !== activeSubChat) {
-        setUnreadCounts(prev => ({
-          ...prev,
-          [msg.subRoom]: (prev[msg.subRoom] || 0) + 1
-        }));
-      }
+    // Ako poruka pripada drugom subchatu, povećaj unread
+    if (msg.subRoom !== activeSubChat) {
+      setUnreadCounts(prevUnread => ({
+        ...prevUnread,
+        [msg.subRoom]: (prevUnread[msg.subRoom] || 0) + 1
+      }));
+    }
 
-      upsertMessage(msg);
-    });
+    return mergeMessage(prev, msg);
+  });
+});
 
     socket.on("scheduled_confirmed", ({ msg, delayMs, subRoom }) => {
       if (subRoom !== activeSubChat) return;
