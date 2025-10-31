@@ -51,7 +51,10 @@ const io = new Server(server, {
 // ✅ SOCKET.IO
 io.on("connection", socket => {
   console.log("✅ Connected:", socket.id);
-
+  
+socket.on("client_refresh", data => {
+  console.log(`♻️ Client triggered auto-refresh: ${socket.id}`, data);
+});
   // --- JOIN ROOM ---
   socket.on("join_room", async ({ roomId, subRoom, nickname }) => {
     socket.join(roomId);
@@ -160,6 +163,7 @@ if (fs.existsSync(clientPath)) {
     res.send("⚠️ Frontend not found (client-dist missing).")
   );
 }
+
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () =>

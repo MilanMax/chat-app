@@ -258,11 +258,20 @@ export default function ChatRoom() {
   }, [sortedMessages]);
 
   useEffect(() => {
+  const hasPending = Object.values(messagesById).some(
+    m => m.isScheduled && !m.scheduledDelivered
+  );
+  if (!hasPending) return;
+
   const id = setInterval(() => {
-    window.location.reload();
-  }, 2000); // 2s
+    if (document.visibilityState === "visible") {
+      // 📡 pošalji signal serveru pre nego što se stranica osveži
+      socket.emit("client_refresh", { reason: "auto-refresh after pending" });
+      window.location.reload();
+    }
+  }, 2000);
   return () => clearInterval(id);
-}, []);
+}, [messagesById]);
 
   return (
     <div className="flex flex-col h-screen bg-bg text-white">
