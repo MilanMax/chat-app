@@ -265,11 +265,19 @@ export default function ChatRoom() {
 
   const id = setInterval(() => {
     if (document.visibilityState === "visible") {
-      // 📡 pošalji signal serveru pre nego što se stranica osveži
-      socket.emit("client_refresh", { reason: "auto-refresh after pending" });
-      window.location.reload();
+      console.log("♻️ Sending refresh signal to server...");
+      socket.emit("client_refresh", {
+        reason: "auto-refresh after pending",
+        time: new Date().toISOString(),
+      });
+
+      // ⏳ Sačekaj 300ms da emit ode pre reload-a
+      setTimeout(() => {
+        window.location.reload();
+      }, 300);
     }
   }, 2000);
+
   return () => clearInterval(id);
 }, [messagesById]);
 
