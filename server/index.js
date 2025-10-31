@@ -89,41 +89,56 @@ io.on("connection", socket => {
     io.to(data.roomId).emit("message", saved.toObject());
   });
 
-  socket.on(
-    "schedule_message",
-    async ({ roomId, subRoom, text, delayMs, nickname }) => {
-      const deliverAt = new Date(Date.now() + delayMs);
-      const msg = {
+socket.on(
+  "schedule_message",
+  async ({ roomId, subRoom, text, delayMs, nickname }) => {
+    const deliverAt = new Date(Date.now() + delayMs);
+
+    // 🟣 1️⃣ Kreiramo pending poruku koja se vidi odmah (italic)
+    const scheduled = await Message.create({
+      roomId,
+      subRoom,
+      username: nickname,
+      text,
+      ts: new Date(),
+      isScheduled: true,
+      deliverAt,
+      scheduledSourceId: null
+    });
+
+    // ✅ Pošalji samo senderu da prikaže italic "Scheduled for ..."
+    const scheduledMsg = {
+      ...scheduled.toObject(),
+      scheduledDelivered: false
+    };
+    socket.emit("scheduled_confirmed", {
+      msg: scheduledMsg,
+      delayMs,
+      subRoom
+    });
+
+    // 🟢 2️⃣ Nakon isteka delay-a — šaljemo isporučenu poruku
+    setTimeout(async () => {
+      const deliverMsg = {
         roomId,
         subRoom,
         username: nickname,
         text,
         ts: new Date(),
-        isScheduled: true,
-        deliverAt
+        isScheduled: false,
+        deliverAt,
+        scheduledSourceId: scheduled._id.toString(),
+        scheduledDelivered: true
       };
-      const saved = await Message.create(msg);
-      saved.scheduledSourceId = saved._id.toString();
-      await saved.save();
-      socket.emit("scheduled_confirmed", {
-        msg: saved.toObject(),
-        delayMs,
-        subRoom
-      });
 
-      setTimeout(async () => {
-        const deliverMsg = {
-          ...msg,
-          isScheduled: false,
-          ts: new Date(),
-          scheduledSourceId: saved._id.toString()
-        };
-        const delivered = await Message.create(deliverMsg);
-        io.to(roomId).emit("message", delivered.toObject());
-        console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
-      }, delayMs);
-    }
-  );
+      const delivered = await Message.create(deliverMsg);
+
+      // ✅ Emituj svima u sobi (uključujući pošiljaoca)
+      io.to(roomId).emit("message", delivered.toObject());
+      console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
+    }, delayMs);
+  }
+);
 
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });

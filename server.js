@@ -71,42 +71,43 @@ io.on("connection", socket => {
     socket.emit("message_delivered", msg);
   });
 
-  // --- SCHEDULE MESSAGE ---
-  socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
-    const scheduleId = Date.now();
-    const msg = {
-      id: scheduleId,
-      username: nickname,
-      text,
-      subRoom,
-      ts: new Date().toISOString(),
-      deliverAt: Date.now() + delayMs,
-      isScheduled: true,
-      senderId: socket.id
+// --- SCHEDULE MESSAGE ---
+socket.on("schedule_message", ({ roomId, subRoom, text, delayMs, nickname }) => {
+  const scheduleId = Date.now().toString();
+
+  // 🟣 Ovo je "scheduled" placeholder poruka koja se vidi odmah
+  const msg = {
+    id: scheduleId,
+    username: nickname,
+    text,
+    subRoom: subRoom || "default",
+    ts: new Date().toISOString(),
+    deliverAt: Date.now() + delayMs,
+    isScheduled: true,
+    senderId: socket.id,
+    scheduledDelivered: false
+  };
+
+  // 📩 Pošalji samo senderu da prikaže italic "Scheduled for ..."
+  socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
+
+  // ⏱ Nakon isteka vremena — pošalji stvarnu poruku svima
+  setTimeout(() => {
+    const deliverMsg = {
+      ...msg,
+      isScheduled: false,
+      deliveredAt: new Date().toISOString(),
+      scheduledDelivered: true,
+      scheduledSourceId: scheduleId // 🔑 KLJUČNO za merge
     };
 
-    // 📩 Sender vidi pending odmah
-    socket.emit("scheduled_confirmed", { msg, delayMs, subRoom });
+    if (!messageHistory[roomId]) messageHistory[roomId] = [];
+    messageHistory[roomId].push(deliverMsg);
 
-    // ⏱ Kada istekne vreme — pošalji svima osim senderu, a njemu zamenu
-    setTimeout(() => {
-      const deliverMsg = {
-        ...msg,
-        isScheduled: false,
-        deliveredAt: new Date().toISOString()
-      };
-
-      if (!messageHistory[roomId]) messageHistory[roomId] = [];
-      messageHistory[roomId].push(deliverMsg);
-
-      // ✅ Svima osim senderu
-      socket.to(roomId).emit("message", deliverMsg);
-
-      // ✅ Samo senderu
-      socket.emit("message_delivered", deliverMsg);
-    }, delayMs);
-  });
-
+    // ✅ Pošalji svima u sobi uključujući sendera
+    io.to(roomId).emit("message", deliverMsg);
+  }, delayMs);
+});
   // --- DISCONNECT ---
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
