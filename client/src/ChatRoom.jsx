@@ -160,6 +160,14 @@ export default function ChatRoom() {
       }
 
       upsertMessage(msg);
+
+      // ✅ REFRESH nakon što scheduled poruka stigne
+      if (msg.scheduledSourceId && msg.scheduledDelivered) {
+        console.log("♻️ Auto-refreshing after scheduled delivery...");
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
+      }
     });
 
     // ✅ Scheduled potvrda - samo za sendera
