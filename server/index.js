@@ -121,6 +121,7 @@ io.on("connection", socket => {
         delayMs,
         subRoom
       });
+      console.log("📤 EMITTED scheduled_confirmed to", socket.id);
 
       // 🟢 2️⃣ Nakon isteka delay-a — šaljemo isporučenu poruku
       setTimeout(async () => {
