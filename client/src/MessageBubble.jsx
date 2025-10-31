@@ -7,47 +7,45 @@ export default function MessageBubble({
   deliverAt,
   scheduledDelivered
 }) {
-  const bubbleClass = mine
-    ? "bg-indigo-600 text-white self-end"
-    : "bg-slate-700 text-gray-100 self-start";
+  const timeString = new Date(ts).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 
-  const time = ts
-    ? new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-    : "";
+  const deliverAtString =
+    deliverAt &&
+    new Date(deliverAt).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+
+  let statusText = "";
+  if (isScheduled && !scheduledDelivered) {
+    statusText = `Scheduled for ${deliverAtString}`;
+  } else if (scheduledDelivered) {
+    statusText = "Delivered (scheduled)";
+  }
 
   return (
-    <div className={`flex flex-col ${mine ? "items-end" : "items-start"}`}>
+    <div
+      className={`flex flex-col ${
+        mine ? "items-end" : "items-start"
+      } w-full`}
+    >
       {!mine && (
-        <span className="text-[0.7rem] text-slate-400 mb-1">{username}</span>
+        <div className="text-xs text-gray-400 mb-0.5">{username}</div>
       )}
       <div
-        className={`px-3 py-2 rounded-2xl text-sm max-w-[80%] border border-slate-800 ${bubbleClass}`}
-      >
-        <span className={scheduledDelivered ? "italic" : ""}>{text}</span>
-        {isScheduled && !scheduledDelivered && (
-          <span
-            className="ml-1 text-[0.8rem] opacity-80"
-            title={`Scheduled for ${new Date(
-              deliverAt || Date.now()
-            ).toLocaleTimeString()}`}
-          >
-            ⏰
-          </span>
-        )}
-      </div>
-      <div
-        className={`text-[0.65rem] mt-1 ${
-          mine ? "text-right" : "text-left"
-        } text-slate-500 flex flex-wrap gap-1 items-center ${
-          mine ? "justify-end" : ""
+        className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${
+          mine
+            ? "bg-bubbleSelf text-white rounded-br-none"
+            : "bg-bubbleOther text-gray-100 rounded-bl-none"
         }`}
       >
-        <span>{time}</span>
-        {scheduledDelivered && (
-          <span className="text-[0.6rem] italic text-indigo-300">
-            · This message was scheduled and delivered
-          </span>
-        )}
+        <div>{text}</div>
+        <div className="text-[0.7rem] text-gray-300 mt-1 flex justify-end italic">
+          {statusText || timeString}
+        </div>
       </div>
     </div>
   );
