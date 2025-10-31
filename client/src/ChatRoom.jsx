@@ -6,8 +6,14 @@ import UsernameBanner from "./UsernameBanner.jsx";
 
 const deriveKey = msg => {
   if (!msg) return null;
+  
+  // KLJUČNA PROMENA: Ako poruka ima scheduledSourceId, koristi njega kao key
+  // Tako će delivered poruka update-ovati originalnu scheduled poruku
+  if (msg.scheduledSourceId) {
+    return msg.scheduledSourceId;
+  }
+  
   return (
-    msg.scheduledSourceId ||
     msg._storageKey ||
     (msg.deliverAt
       ? `${msg.username || ""}__${msg.subRoom || "default"}__${new Date(
@@ -44,14 +50,14 @@ const mergeMessage = (collection, incoming) => {
   let scheduledDeliveredFlag =
     previous.scheduledDelivered ?? incoming.scheduledDelivered ?? false;
 
-  if (!incoming.isScheduled && (incoming.scheduledSourceId || incoming.deliverAt)) {
+  // Ako dolazi poruka koja NIJE scheduled ali ima scheduledSourceId,
+  // to znači da je ovo delivered verzija
+  if (!incoming.isScheduled && incoming.scheduledSourceId) {
     scheduledDeliveredFlag = true;
   }
 
-  if (
-    !incoming.isScheduled &&
-    (previous.isScheduled || (incoming.scheduledSourceId && isScheduledFlag))
-  ) {
+  // Ako prethodna poruka bila scheduled a nova nije, takođe je delivered
+  if (previous.isScheduled && !incoming.isScheduled) {
     scheduledDeliveredFlag = true;
   }
 
