@@ -52,6 +52,7 @@ const io = new Server(server, {
 io.on("connection", socket => {
   console.log("✅ Connected:", socket.id);
 
+  // --- JOIN ROOM ---
   socket.on("join_room", async ({ roomId, subRoom, nickname }) => {
     socket.join(roomId);
     socket.data = { roomId, nickname };
@@ -59,7 +60,7 @@ io.on("connection", socket => {
     // učitaj istoriju i subchats
     const history = await Message.find({ roomId }).sort({ ts: 1 }).lean();
     const subchats = await Subchat.find({ roomId }).lean();
-    
+
     socket.emit("chat_history", history);
     socket.emit(
       "subchat_list",
@@ -67,6 +68,7 @@ io.on("connection", socket => {
     );
   });
 
+  // --- CREATE SUBCHAT ---
   socket.on("create_subchat", async ({ roomId, subRoom }) => {
     const exists = await Subchat.findOne({ roomId, name: subRoom });
     if (!exists) {
@@ -76,6 +78,7 @@ io.on("connection", socket => {
     }
   });
 
+  // --- SEND MESSAGE (odmah) ---
   socket.on("send_message", async data => {
     const msg = {
       roomId: data.roomId,
@@ -89,57 +92,60 @@ io.on("connection", socket => {
     io.to(data.roomId).emit("message", saved.toObject());
   });
 
-socket.on(
-  "schedule_message",
-  async ({ roomId, subRoom, text, delayMs, nickname }) => {
-    const deliverAt = new Date(Date.now() + delayMs);
+  // --- SCHEDULE MESSAGE (sa ispravnim italic prikazom) ---
+  socket.on(
+    "schedule_message",
+    async ({ roomId, subRoom, text, delayMs, nickname }) => {
+      const deliverAt = new Date(Date.now() + delayMs);
 
-    // 🟣 1️⃣ Kreiramo pending poruku koja se vidi odmah (italic)
-    const scheduled = await Message.create({
-      roomId,
-      subRoom,
-      username: nickname,
-      text,
-      ts: new Date(),
-      isScheduled: true,
-      deliverAt,
-      scheduledSourceId: null
-    });
-
-    // ✅ Pošalji samo senderu da prikaže italic "Scheduled for ..."
-    const scheduledMsg = {
-      ...scheduled.toObject(),
-      scheduledDelivered: false
-    };
-    socket.emit("scheduled_confirmed", {
-      msg: scheduledMsg,
-      delayMs,
-      subRoom
-    });
-
-    // 🟢 2️⃣ Nakon isteka delay-a — šaljemo isporučenu poruku
-    setTimeout(async () => {
-      const deliverMsg = {
+      // 🟣 1️⃣ Kreiramo pending poruku koja se vidi odmah (italic)
+      const scheduled = await Message.create({
         roomId,
         subRoom,
         username: nickname,
         text,
         ts: new Date(),
-        isScheduled: false,
+        isScheduled: true,
         deliverAt,
-        scheduledSourceId: scheduled._id.toString(),
-        scheduledDelivered: true
-      };
+        scheduledSourceId: null
+      });
 
-      const delivered = await Message.create(deliverMsg);
+      // ✅ Pošalji samo senderu da prikaže italic "Scheduled for ..."
+      io.to(socket.id).emit("scheduled_confirmed", {
+        msg: {
+          ...scheduled.toObject(),
+          scheduledDelivered: false,
+          isScheduled: true,
+          deliverAt
+        },
+        delayMs,
+        subRoom
+      });
 
-      // ✅ Emituj svima u sobi (uključujući pošiljaoca)
-      io.to(roomId).emit("message", delivered.toObject());
-      console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
-    }, delayMs);
-  }
-);
+      // 🟢 2️⃣ Nakon isteka delay-a — šaljemo isporučenu poruku
+      setTimeout(async () => {
+        const deliverMsg = {
+          roomId,
+          subRoom,
+          username: nickname,
+          text,
+          ts: new Date(),
+          isScheduled: false,
+          deliverAt,
+          scheduledSourceId: scheduled._id.toString(),
+          scheduledDelivered: true
+        };
 
+        const delivered = await Message.create(deliverMsg);
+
+        // ✅ Emituj svima u sobi (uključujući pošiljaoca)
+        io.to(roomId).emit("message", delivered.toObject());
+        console.log(`⏰ Delivered scheduled msg to ${roomId}/${subRoom}`);
+      }, delayMs);
+    }
+  );
+
+  // --- DISCONNECT ---
   socket.on("disconnect", () => console.log("❌ Disconnected:", socket.id));
 });
 
@@ -157,4 +163,6 @@ if (fs.existsSync(clientPath)) {
 }
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`🚀 Server + Mongo running on ${PORT}`))
+server.listen(PORT, () =>
+  console.log(`🚀 Server + Mongo running on ${PORT}`)
+);
